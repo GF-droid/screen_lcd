@@ -1,8 +1,11 @@
+#include <stdio.h>
 #include "lvgl.h"
 
 void btn_click_event(lv_event_t* e) {
     lv_obj_t* btn = lv_event_get_target(e);
     lv_obj_t* label = lv_obj_get_child(btn, 0);
+    printf("Hello LVGL\n");
+    fflush(stdout);  /* 无tty(adb)时stdout全缓冲, 强制立即输出 */
     lv_label_set_text(label, "Hello LVGL!");
 }
 
