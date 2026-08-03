@@ -8,72 +8,40 @@ static lv_obj_t* lv_image_vewer_create(lv_obj_t* parent, const char* image_path,
     return img;
 }
 
-static lv_style_t style_chip;       /* 气泡本体 */
-static lv_style_t style_chip_label; /* 气泡文案 */
-static bool chip_bubble_style_inited = false;
- 
-static void chip_bubble_style_init(void) {
-    if (chip_bubble_style_inited) return;
-    chip_bubble_style_inited = true;
- 
-    /* ---------- 气泡本体：玻璃质感渐变胶囊 ---------- */
-    lv_style_init(&style_chip);
-    lv_style_set_radius(&style_chip, LV_RADIUS_CIRCLE);
-    lv_style_set_bg_opa(&style_chip, LV_OPA_80);
-    lv_style_set_bg_color(&style_chip, lv_color_hex(0x6B7BFF));      /* 气泡-顶部 */
-    lv_style_set_bg_grad_color(&style_chip, lv_color_hex(0x3A46B8)); /* 气泡-底部 */
-    lv_style_set_bg_grad_dir(&style_chip, LV_GRAD_DIR_VER);
-    lv_style_set_border_width(&style_chip, 1);
-    lv_style_set_border_color(&style_chip, lv_color_white());
-    lv_style_set_border_opa(&style_chip, LV_OPA_30);
-    lv_style_set_shadow_width(&style_chip, 10);
-    lv_style_set_shadow_color(&style_chip, lv_color_hex(0x7C86FF));
-    lv_style_set_shadow_opa(&style_chip, LV_OPA_20);
-    lv_style_set_pad_left(&style_chip, 14);
-    lv_style_set_pad_right(&style_chip, 14);
-    lv_style_set_pad_column(&style_chip, 10); /* 图标槽和文字之间的间距 */
-    /* 内部横向排列：[图标槽] [文案] */
-    lv_style_set_layout(&style_chip, LV_LAYOUT_FLEX);
-    lv_style_set_flex_flow(&style_chip, LV_FLEX_FLOW_ROW);
-    lv_style_set_flex_main_place(&style_chip, LV_FLEX_ALIGN_START);
-    lv_style_set_flex_cross_place(&style_chip, LV_FLEX_ALIGN_CENTER);
- 
-    /* ---------- 气泡文案（不设字体，跟随外部设置继承） ---------- */
-    lv_style_init(&style_chip_label);
-    lv_style_set_text_color(&style_chip_label, lv_color_white());
-}
- 
-lv_obj_t * chip_bubble_create(lv_obj_t * parent, lv_coord_t w, lv_coord_t h, const char * text) {
-    chip_bubble_style_init();
- 
-    /* 1. 气泡本体 */
-    lv_obj_t * chip = lv_obj_create(parent);
-    lv_obj_remove_style_all(chip);
-    lv_obj_add_style(chip, &style_chip, LV_STATE_DEFAULT);
-    lv_obj_set_size(chip, w, h);
-    lv_obj_set_scrollable(chip, false);
- 
-    /* 布局解析一次，拿到气泡真实的像素高度，图标槽尺寸按它算比例 */
-    lv_obj_update_layout(chip);
-    lv_coord_t chip_h_px = lv_obj_get_height(chip);
- 
-    /* 2. 图标槽：空的正方形容器，边长是气泡高度的比例，图标自己加 */
-    lv_coord_t icon_size = chip_h_px * 55 / 100; /* ≈ 气泡高度的 55% (整数运算) */
-    lv_obj_t * icon_slot = lv_obj_create(chip);
-    lv_obj_remove_style_all(icon_slot);
-    lv_obj_set_size(icon_slot, icon_size, icon_size);
-    lv_obj_set_style_bg_opa(icon_slot, LV_OPA_TRANSP, LV_STATE_DEFAULT);
-    lv_obj_set_clickable(icon_slot, false);
-    lv_obj_set_scrollable(icon_slot, false);
- 
-    /* 3. 文案 */
-    lv_obj_t * label = lv_label_create(chip);
-    lv_obj_add_style(label, &style_chip_label, LV_STATE_DEFAULT);
-    lv_label_set_text(label, text);
-    lv_obj_set_flex_grow(label, 1);
-    lv_obj_set_clickable(label, false);
- 
-    return chip;
+static lv_obj_t* lv_mid_screen_componnet_create(lv_obj_t *parent) {
+    /* 状态卡片: 靠屏幕右半区 (卡片 60% 宽, 从右侧向内收, 不与左侧设置列表重叠) */
+    lv_obj_t* sp_panel = status_panel_create(parent, LV_PCT(60), LV_PCT(60));
+    lv_obj_align(sp_panel, LV_ALIGN_RIGHT_MID, -20, 0);
+
+    /* 深色内容底板: 卡片无布局, 直接手动对齐 */
+    lv_obj_t* temp = lv_obj_create(sp_panel);
+    lv_obj_remove_style_all(temp);
+    lv_obj_set_size(temp, LV_PCT(100), LV_PCT(80));
+    lv_obj_align(temp, LV_ALIGN_BOTTOM_MID, 0, 15);
+    lv_obj_set_clickable(temp, false);
+    lv_obj_set_scrollable(temp, false);
+    /* flex 自动换行: 从左往右排, 一行放不下自动换下一行, 间距 10px */
+    lv_obj_set_style_layout(temp, LV_LAYOUT_FLEX, LV_STATE_DEFAULT);
+    lv_obj_set_style_flex_flow(temp, LV_FLEX_FLOW_ROW_WRAP, LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_column(temp, 25, LV_STATE_DEFAULT); /* 列间距 */
+    lv_obj_set_style_pad_row(temp, 25, LV_STATE_DEFAULT);    /* 行间距 */
+
+    lv_font_t* fontback = get_font(FONT_TYPE_CN, 30);
+    if (fontback != NULL) {
+        lv_obj_set_style_text_font(sp_panel, fontback, LV_STATE_DEFAULT);
+    }
+    /* 气泡由 flex 自动排列成行, 无需手动定位 */
+    lv_obj_t* chip0 = chip_bubble_create(temp, 140, 30, "正常");
+    lv_obj_t* chip1 = chip_bubble_create(temp, 140, 30, "正常");
+    lv_obj_t* chip2 = chip_bubble_create(temp, 140, 30, "正常");
+    lv_obj_t* chip3 = chip_bubble_create(temp, 140, 30, "正常");
+    lv_obj_t* chip4 = chip_bubble_create(temp, 140, 30, "正常");
+    lv_obj_t* chip5 = chip_bubble_create(temp, 140, 30, "正常");
+    lv_obj_t* chip6 = chip_bubble_create(temp, 140, 30, "正常");
+    lv_obj_t* chip7 = chip_bubble_create(temp, 140, 30, "正常");
+    // lv_obj_t* chip8 = chip_bubble_create(temp, 140, 40, "正常");
+
+    return sp_panel;
 }
 
 void set_init(void) {
@@ -82,9 +50,9 @@ void set_init(void) {
     lv_image_vewer_create(lv_screen_active(), IMAGE_PATH "top.png", LV_ALIGN_TOP_MID, 0, 0);
 
     lv_obj_t* bottom_img = lv_image_vewer_create(lv_screen_active(), IMAGE_PATH "bottom.png", LV_ALIGN_BOTTOM_MID, 0, 0);
-    
+
     font_init(); /* 注册 TTF 字体路径, 必须在 get_font() 之前 */
-    
+
     lv_obj_t* panel = settings_panel_create(lv_scr_act(), LV_PCT(20), LV_PCT(65));
     lv_obj_align_to(panel, lv_scr_act(), LV_ALIGN_LEFT_MID, 107, 0);
     lv_obj_update_layout(panel);
@@ -102,16 +70,8 @@ void set_init(void) {
 
     settings_row_set_selected(&row_alarm, true); /* 初始选中第 3 行 */
 
-    /* 状态卡片: 屏幕居中 (create 内部已自动初始化样式, 无需再调 style_init) */
-    lv_obj_t* sp_panel = status_panel_create(lv_scr_act(), LV_PCT(60), LV_PCT(60)).panel;
-    lv_obj_align_to(sp_panel, panel, LV_ALIGN_OUT_RIGHT_MID, 86, 0);
-
-    lv_font_t* fontback = get_font(FONT_TYPE_CN, 30);
-    if (fontback != NULL) {
-        lv_obj_set_style_text_font(sp_panel, fontback, LV_STATE_DEFAULT);
-    }
-
-    chip_bubble_create(sp_panel, 140, 40, "正常");
+    lv_obj_t* sp_panel = lv_mid_screen_componnet_create(lv_screen_active());
+    lv_obj_align_to(sp_panel, panel, LV_ALIGN_OUT_RIGHT_MID, 66, 0);
 
     lv_obj_t* btn = glass_glow_btn_create(bottom_img, 140, 45, "shure");
     lv_obj_center(btn);

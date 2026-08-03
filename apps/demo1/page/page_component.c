@@ -275,15 +275,14 @@ void settings_row_set_selected(settings_row_t* row, bool selected) {
         lv_obj_clear_state(row->row, LV_STATE_USER_1);
 }
 
-static lv_style_t style_card;       /* 整张卡片 */
-static lv_style_t style_content_row; /* 卡片内容区容器 */
-static lv_style_t style_corner_glow; /* 卡片四角的柔和光斑，纯装饰 */
+/* -------------------- 状态卡片组件 -------------------- */
+static lv_style_t style_card;        /* 整张卡片 */
 static bool status_panel_style_inited = false;
- 
+
 static void status_panel_style_init(void) {
     if (status_panel_style_inited) return;
     status_panel_style_inited = true;
- 
+
     /* ---------- 整张卡片：圆角渐变背景 + 发光描边 ---------- */
     lv_style_init(&style_card);
     lv_style_set_radius(&style_card, 24);
@@ -299,64 +298,87 @@ static void status_panel_style_init(void) {
     lv_style_set_shadow_opa(&style_card, LV_OPA_30);
     lv_style_set_clip_corner(&style_card, true);
     lv_style_set_pad_all(&style_card, 24);
-    /* 卡片本身纵向排布（目前只有内容区一项，占满全部空间） */
-    lv_style_set_layout(&style_card, LV_LAYOUT_FLEX);
-    lv_style_set_flex_flow(&style_card, LV_FLEX_FLOW_COLUMN);
-
-    /* ---------- 内容区（目前是空容器，占满剩余空间） ---------- */
-    lv_style_init(&style_content_row);
-    lv_style_set_width(&style_content_row, LV_PCT(100));
-    lv_style_set_height(&style_content_row, LV_PCT(100));
-    lv_style_set_bg_opa(&style_content_row, LV_OPA_TRANSP);
- 
-    /* ---------- 四角柔和光斑（纯装饰，透明背景只留阴影） ---------- */
-    lv_style_init(&style_corner_glow);
-    lv_style_set_radius(&style_corner_glow, LV_RADIUS_CIRCLE);
-    lv_style_set_bg_opa(&style_corner_glow, LV_OPA_TRANSP);
-    lv_style_set_shadow_width(&style_corner_glow, 60);
-    lv_style_set_shadow_spread(&style_corner_glow, 10);
-    lv_style_set_shadow_opa(&style_corner_glow, LV_OPA_30);
-    lv_style_set_border_width(&style_corner_glow, 0);
+    /* 卡片不启用布局, 子对象由外部手动 align 定位 */
 }
- 
-status_panel_t status_panel_create(lv_obj_t * parent, lv_coord_t w, lv_coord_t h) {
+
+lv_obj_t* status_panel_create(lv_obj_t* parent, lv_coord_t w, lv_coord_t h) {
     status_panel_style_init();
 
-    status_panel_t panel = {0};
-
     /* 卡片本体 */
-    panel.panel = lv_obj_create(parent);
-    lv_obj_remove_style_all(panel.panel);
-    lv_obj_add_style(panel.panel, &style_card, LV_STATE_DEFAULT);
-    lv_obj_set_size(panel.panel, w, h);
-    lv_obj_set_scrollable(panel.panel, false);
+    lv_obj_t* card = lv_obj_create(parent);
+    lv_obj_remove_style_all(card);
+    lv_obj_add_style(card, &style_card, LV_STATE_DEFAULT);
+    lv_obj_set_size(card, w, h);
+    lv_obj_set_scrollable(card, false);
 
-    /* 四角柔和光斑：一个偏左下（青蓝色）、一个偏右上（紫色），纯装饰，不参与布局 */
-    lv_obj_t * glow_a = lv_obj_create(panel.panel);
-    lv_obj_remove_style_all(glow_a);
-    lv_obj_add_style(glow_a, &style_corner_glow, LV_STATE_DEFAULT);
-    lv_obj_set_style_shadow_color(glow_a, lv_color_hex(0x6CC8FF), LV_STATE_DEFAULT);
-    lv_obj_set_size(glow_a, 10, 10);
-    lv_obj_align(glow_a, LV_ALIGN_BOTTOM_LEFT, 20, -10);
-    lv_obj_set_ignore_layout(glow_a, true);
-    lv_obj_set_clickable(glow_a, false);
+    return card;
+}
+
+/* -------------------- 气泡胶囊组件 -------------------- */
+static lv_style_t style_chip;       /* 气泡本体 */
+static lv_style_t style_chip_label; /* 气泡文案 */
+static bool chip_bubble_style_inited = false;
  
-    lv_obj_t * glow_b = lv_obj_create(panel.panel);
-    lv_obj_remove_style_all(glow_b);
-    lv_obj_add_style(glow_b, &style_corner_glow, LV_STATE_DEFAULT);
-    lv_obj_set_style_shadow_color(glow_b, lv_color_hex(0xB56CFF), LV_STATE_DEFAULT);
-    lv_obj_set_size(glow_b, 10, 10);
-    lv_obj_align(glow_b, LV_ALIGN_TOP_RIGHT, -20, 10);
-    lv_obj_set_ignore_layout(glow_b, true);
-    lv_obj_set_clickable(glow_b, false);
+static void chip_bubble_style_init(void) {
+    if (chip_bubble_style_inited) return;
+    chip_bubble_style_inited = true;
  
-    /* 内容区：目前是空的，占满卡片内部全部空间；
-       胶囊网格（第 2 部分）会往这里面加东西 */
-    panel.content = lv_obj_create(panel.panel);
-    lv_obj_remove_style_all(panel.content);
-    lv_obj_add_style(panel.content, &style_content_row, LV_STATE_DEFAULT);
-    lv_obj_set_flex_grow(panel.content, 1); /* 内容区吃掉剩余全部空间 */
-    lv_obj_set_scrollable(panel.content, false);
+    /* ---------- 气泡本体：玻璃质感渐变胶囊 ---------- */
+    lv_style_init(&style_chip);
+    lv_style_set_radius(&style_chip, LV_RADIUS_CIRCLE);
+    lv_style_set_bg_opa(&style_chip, LV_OPA_80);
+    lv_style_set_bg_color(&style_chip, lv_color_hex(0x6B7BFF));      /* 气泡-顶部 */
+    lv_style_set_bg_grad_color(&style_chip, lv_color_hex(0x3A46B8)); /* 气泡-底部 */
+    lv_style_set_bg_grad_dir(&style_chip, LV_GRAD_DIR_VER);
+    lv_style_set_border_width(&style_chip, 1);
+    lv_style_set_border_color(&style_chip, lv_color_white());
+    lv_style_set_border_opa(&style_chip, LV_OPA_30);
+    lv_style_set_shadow_width(&style_chip, 10);
+    lv_style_set_shadow_color(&style_chip, lv_color_hex(0x7C86FF));
+    lv_style_set_shadow_opa(&style_chip, LV_OPA_20);
+    lv_style_set_pad_left(&style_chip, 14);
+    lv_style_set_pad_right(&style_chip, 14);
+    lv_style_set_pad_column(&style_chip, 10); /* 图标槽和文字之间的间距 */
+    /* 内部横向排列：[图标槽] [文案] */
+    lv_style_set_layout(&style_chip, LV_LAYOUT_FLEX);
+    lv_style_set_flex_flow(&style_chip, LV_FLEX_FLOW_ROW);
+    lv_style_set_flex_main_place(&style_chip, LV_FLEX_ALIGN_START);
+    lv_style_set_flex_cross_place(&style_chip, LV_FLEX_ALIGN_CENTER);
  
-    return panel;
+    /* ---------- 气泡文案（不设字体，跟随外部设置继承） ---------- */
+    lv_style_init(&style_chip_label);
+    lv_style_set_text_color(&style_chip_label, lv_color_white());
+}
+ 
+lv_obj_t * chip_bubble_create(lv_obj_t * parent, lv_coord_t w, lv_coord_t h, const char * text) {
+    chip_bubble_style_init();
+ 
+    /* 1. 气泡本体 */
+    lv_obj_t * chip = lv_obj_create(parent);
+    lv_obj_remove_style_all(chip);
+    lv_obj_add_style(chip, &style_chip, LV_STATE_DEFAULT);
+    lv_obj_set_size(chip, w, h);
+    lv_obj_set_scrollable(chip, false);
+ 
+    /* 布局解析一次，拿到气泡真实的像素高度，图标槽尺寸按它算比例 */
+    lv_obj_update_layout(chip);
+    lv_coord_t chip_h_px = lv_obj_get_height(chip);
+ 
+    /* 2. 图标槽：空的正方形容器，边长是气泡高度的比例，图标自己加 */
+    lv_coord_t icon_size = chip_h_px * 55 / 100; /* ≈ 气泡高度的 55% (整数运算) */
+    lv_obj_t * icon_slot = lv_obj_create(chip);
+    lv_obj_remove_style_all(icon_slot);
+    lv_obj_set_size(icon_slot, icon_size, icon_size);
+    lv_obj_set_style_bg_opa(icon_slot, LV_OPA_TRANSP, LV_STATE_DEFAULT);
+    lv_obj_set_clickable(icon_slot, false);
+    lv_obj_set_scrollable(icon_slot, false);
+ 
+    /* 3. 文案 */
+    lv_obj_t * label = lv_label_create(chip);
+    lv_obj_add_style(label, &style_chip_label, LV_STATE_DEFAULT);
+    lv_label_set_text(label, text);
+    lv_obj_set_flex_grow(label, 1);
+    lv_obj_set_clickable(label, false);
+ 
+    return chip;
 }
