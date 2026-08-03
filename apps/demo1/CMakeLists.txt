@@ -13,9 +13,12 @@ target_include_directories(main PRIVATE
     ${CMAKE_SOURCE_DIR}/lvgl-master
     ${CMAKE_SOURCE_DIR}/apps/demo1/page
     ${CMAKE_SOURCE_DIR}/apps/demo1
+    ${CMAKE_SOURCE_DIR}/apps/demo1/res/font
+    ${CMAKE_SOURCE_DIR}/component/font
 )
 
 target_link_libraries(main PRIVATE
     lvgl
     lvgl_porting
+    font
 )
