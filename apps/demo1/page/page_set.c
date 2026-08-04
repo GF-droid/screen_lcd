@@ -8,7 +8,21 @@ static lv_obj_t* lv_image_vewer_create(lv_obj_t* parent, const char* image_path,
     return img;
 }
 
-static lv_obj_t* lv_mid_screen_componnet_create(lv_obj_t *parent) {
+static lv_obj_t* lv_image_vewer_create_with_size(lv_obj_t* parent, const char* image_path, lv_coord_t w, lv_coord_t h, char* text) {
+    lv_obj_t* lv_img = chip_bubble_create(parent, w, h, text);
+    lv_obj_t* img = lv_image_create(lv_img);
+    lv_image_set_src(img, image_path);
+    lv_coord_t src_w = lv_image_get_src_width(img); /* 原图宽度 */
+    if (src_w > 0) {
+        lv_image_set_scale(img, 256 * 16 / src_w); /* 按宽度缩到 16px, 高度等比 */
+    }
+
+    lv_obj_set_ignore_layout(img, true); /* 不参与 flex 布局, 由手动 align 定位 */
+    lv_obj_align_to(img, lv_img, LV_ALIGN_LEFT_MID, 0, 0);
+    return lv_img;
+}
+
+static lv_obj_t* lv_mid_screen_componnet_create(lv_obj_t* parent) {
     /* 状态卡片: 靠屏幕右半区 (卡片 60% 宽, 从右侧向内收, 不与左侧设置列表重叠) */
     lv_obj_t* sp_panel = status_panel_create(parent, LV_PCT(60), LV_PCT(60));
     lv_obj_align(sp_panel, LV_ALIGN_RIGHT_MID, -20, 0);
@@ -26,19 +40,19 @@ static lv_obj_t* lv_mid_screen_componnet_create(lv_obj_t *parent) {
     lv_obj_set_style_pad_column(temp, 25, LV_STATE_DEFAULT); /* 列间距 */
     lv_obj_set_style_pad_row(temp, 25, LV_STATE_DEFAULT);    /* 行间距 */
 
-    lv_font_t* fontback = get_font(FONT_TYPE_CN, 30);
+    lv_font_t* fontback = get_font(FONT_TYPE_CN, 10);
     if (fontback != NULL) {
         lv_obj_set_style_text_font(sp_panel, fontback, LV_STATE_DEFAULT);
     }
     /* 气泡由 flex 自动排列成行, 无需手动定位 */
-    lv_obj_t* chip0 = chip_bubble_create(temp, 140, 30, "正常");
-    lv_obj_t* chip1 = chip_bubble_create(temp, 140, 30, "正常");
-    lv_obj_t* chip2 = chip_bubble_create(temp, 140, 30, "正常");
-    lv_obj_t* chip3 = chip_bubble_create(temp, 140, 30, "正常");
-    lv_obj_t* chip4 = chip_bubble_create(temp, 140, 30, "正常");
-    lv_obj_t* chip5 = chip_bubble_create(temp, 140, 30, "正常");
-    lv_obj_t* chip6 = chip_bubble_create(temp, 140, 30, "正常");
-    lv_obj_t* chip7 = chip_bubble_create(temp, 140, 30, "正常");
+    lv_obj_t* chip0 = lv_image_vewer_create_with_size(temp, IMAGE_PATH "iconfont_wifi.png", 140, 30, "WIFI办公室");
+    lv_obj_t* chip1 = lv_image_vewer_create_with_size(temp, IMAGE_PATH "iconfont_yinl.png", 140, 30, "蓝牙办公室");
+    lv_obj_t* chip2 = lv_image_vewer_create_with_size(temp, IMAGE_PATH "iconfont_laoz.png", 140, 30, "IP地址:127.0.0.1");
+    lv_obj_t* chip3 = lv_image_vewer_create_with_size(temp, IMAGE_PATH "iconfont_riz.png", 140, 30, "网络测试");
+    lv_obj_t* chip4 = lv_image_vewer_create_with_size(temp, IMAGE_PATH "iconfont_genx.png", 140, 30, "子掩饰码");
+    lv_obj_t* chip5 = lv_image_vewer_create_with_size(temp, IMAGE_PATH "iconfont_guan.png", 140, 30, "待定");
+    lv_obj_t* chip6 = lv_image_vewer_create_with_size(temp, IMAGE_PATH "iconfont_bule.png", 140, 30, "待定");
+    lv_obj_t* chip7 = lv_image_vewer_create_with_size(temp, IMAGE_PATH "iconfont_guan.png", 140, 30, "待定");
     // lv_obj_t* chip8 = chip_bubble_create(temp, 140, 40, "正常");
 
     return sp_panel;
