@@ -20,6 +20,7 @@ endif()
 
 add_subdirectory(component/osal)
 add_subdirectory(component/font)
+add_subdirectory(component/wifi)
 add_subdirectory(lvgl-master)
 # add_subdirectory(apps/demo)
 add_subdirectory(apps/demo1)

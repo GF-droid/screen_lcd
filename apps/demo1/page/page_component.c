@@ -46,7 +46,7 @@ void glass_glow_btn_style_init(void) {
     lv_style_set_bg_grad_dir(&style_pill_main, LV_GRAD_DIR_VER);
     lv_style_set_border_width(&style_pill_main, 0); /* 描边职责交给圆环层，主体不再单独描边 */
     lv_style_set_text_color(&style_pill_main, lv_color_white());
-    lv_style_set_text_font(&style_pill_main, &lv_font_montserrat_16);
+    /* 注意: 这里不设 text_font, 字体由外部在按钮对象上设置后继承 */
     lv_style_set_pad_all(&style_pill_main, 0);
 
     /* ---------- 第 3 层：顶部高光，真正的"不透明 -> 全透明"渐隐 ---------- */
@@ -377,7 +377,10 @@ lv_obj_t * chip_bubble_create(lv_obj_t * parent, lv_coord_t w, lv_coord_t h, con
     lv_obj_t * label = lv_label_create(chip);
     lv_obj_add_style(label, &style_chip_label, LV_STATE_DEFAULT);
     lv_label_set_text(label, text);
-    lv_obj_set_flex_grow(label, 1);
+    lv_obj_set_ignore_layout(label, true); /* 不参与 flex 布局，手动对齐 */
+    lv_obj_update_layout(chip);            /* 先让 flex 定位好图标槽, 否则对齐会用未布局的 (0,0) 坐标 */
+    lv_obj_align_to(label, icon_slot, LV_ALIGN_CENTER, 50, 7); /* 图标槽右侧 10px */
+    lv_obj_set_flex_grow(label, 1); /* 已 ignore_layout, 此行使 flex 跳过它, 保留无妨 */
     lv_obj_set_clickable(label, false);
  
     return chip;

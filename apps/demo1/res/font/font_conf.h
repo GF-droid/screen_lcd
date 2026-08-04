@@ -12,7 +12,7 @@ typedef enum
 }FONT_TYPE;
 
 #define FONT_TYPE_CN_PATH FONT_PATH "QingNiaoHuaGuangJianMeiHei-2.ttf"
-#define FONT_TYPE_CN_LIGHT_PATH FONT_PATH "XiangJiaoKuanMaoShuaLingGanTi-2.ttf"
+#define FONT_TYPE_CN_LIGHT_PATH FONT_PATH "AaLaoJieZhaoPaiTi-2.ttf"
 #define FONT_TYPE_NUMBER_PATH FONT_PATH "ZiHunLongTengKaiShu(ShangYongXuShouQuan)-2.ttf"
 
 #define font_init() \

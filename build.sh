@@ -42,13 +42,15 @@ if [ "$PLATFORM" = "t113" ]; then
     echo "[1/2] Configuring (cross-compile)..."
     cmake "$PROJECT_DIR" \
         -DCMAKE_TOOLCHAIN_FILE="$PROJECT_DIR/platform/t113/t113.cmake" \
-        -DLV_BUILD_CONF_DIR="$PROJECT_DIR/platform/t113/src/porting"
+        -DLV_BUILD_CONF_DIR="$PROJECT_DIR/platform/t113/src/porting" \
+        -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 else
     echo "[1/2] Configuring (native)..."
     cmake "$PROJECT_DIR" \
         -DSIMULATOR_LINUX=linux \
         -DCMAKE_TOOLCHAIN_FILE="$PROJECT_DIR/platform/x86linux/linux.cmake" \
-        -DLV_BUILD_CONF_DIR="$PROJECT_DIR/platform/x86linux/src/porting"
+        -DLV_BUILD_CONF_DIR="$PROJECT_DIR/platform/x86linux/src/porting" \
+        -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 fi
 
 echo ""

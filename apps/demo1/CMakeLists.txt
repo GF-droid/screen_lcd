@@ -15,10 +15,12 @@ target_include_directories(main PRIVATE
     ${CMAKE_SOURCE_DIR}/apps/demo1
     ${CMAKE_SOURCE_DIR}/apps/demo1/res/font
     ${CMAKE_SOURCE_DIR}/component/font
+    ${CMAKE_SOURCE_DIR}/component/wifi
 )
 
 target_link_libraries(main PRIVATE
     lvgl
     lvgl_porting
     font
+    wifi
 )
