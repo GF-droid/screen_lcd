@@ -1,17 +1,9 @@
 #include <string.h>
+#include <stdlib.h>
 #include <time.h>
 #include "page_conf.h"
 #include "res_conf.h"
-
-/* WiFi 连接条单实例: 全局引用, 供回调访问输入内容/图标 (set_init 只创建一次) */
-static lv_obj_t* g_loading_img = NULL; /* 加载动画图标 */
-static lv_obj_t* g_success_img = NULL; /* 连接成功对勾 */
-static lv_obj_t* g_hint_label = NULL;  /* 失败提示文字 */
-static lv_obj_t* g_wifi_kb = NULL;     /* 屏幕键盘 (连接时收起) */
-static lv_timer_t* g_frame_timer = NULL;
-static lv_timer_t* g_success_timer = NULL;
-static lv_timer_t* g_hint_timer = NULL;
-static wifi_connect_bar_t g_wifi_bar; /* 组件引用副本 (点击回调里取输入内容用) */
+#include "res/music/music_conf.h"
 
 /* 顶栏动态元素: 时间 label + WiFi 图标/文案 (连接状态实时切换) */
 static lv_obj_t* g_top_time_label = NULL;
@@ -35,104 +27,13 @@ static lv_obj_t* lv_image_vewer_create(lv_obj_t* parent, const char* image_path,
     return img;
 }
 
-// 中间组件中的图标和文字显示
-static lv_obj_t* lv_image_vewer_create_with_size(lv_obj_t* parent, const char* image_path, lv_coord_t w, lv_coord_t h, char* text) {
-    lv_obj_t* lv_img = chip_bubble_create(parent, w, h, text);
-    lv_obj_t* img = lv_image_create(lv_img);
-    lv_image_set_src(img, image_path);
-    lv_coord_t src_w = lv_image_get_src_width(img); /* 原图宽度 */
-    if (src_w > 0) {
-        lv_image_set_scale(img, 256 * 16 / src_w); /* 按宽度缩到 16px, 高度等比 */
-    }
-
-    lv_obj_set_ignore_layout(img, true); /* 不参与 flex 布局, 由手动 align 定位 */
-    lv_obj_align_to(img, lv_img, LV_ALIGN_LEFT_MID, -5, 0);
-    return lv_img;
-}
-
-/* 输入框获得焦点时, 屏幕键盘切换到对应输入框并弹出.
-   光标显示机制 (与 app_sdk 相同):
-   1. lv_keyboard_set_textarea 会自动给新输入框加 LV_STATE_FOCUSED (并清掉旧的)
-   2. 光标 = LV_PART_CURSOR | LV_STATE_FOCUSED 的 2px 竖线, 靠这个状态显示
-   所以这里绝不能手动清 FOCUSED 状态, 否则光标永远不显示 (旧代码就是这么干的).
-   也无需手动发 FOCUSED 事件 — 触摸点击 v9 的 click_focus 原生会发, 带了合法 indev 参数 */
-static void wifi_input_focus_cb(lv_event_t* e) {
-    lv_obj_t* ta = lv_event_get_target(e);    /* 刚获得焦点的输入框 */
-    lv_obj_t* kb = lv_event_get_user_data(e); /* 屏幕键盘 */
-    lv_keyboard_set_textarea(kb, ta);
-    lv_obj_clear_flag(kb, LV_OBJ_FLAG_HIDDEN); /* 弹出键盘 */
-}
-
-/* 点击键盘的 OK 确认键时, 收起键盘 */
-static void wifi_kb_ready_cb(lv_event_t* e) {
-    lv_obj_add_flag(lv_event_get_user_data(e), LV_OBJ_FLAG_HIDDEN);
-}
-
-// 注册中间矩形组件
+// 注册中间矩形组件: 闹钟管理卡片 (左半闹钟设置, 右半倒计时)
 static lv_obj_t* lv_mid_screen_componnet_create(lv_obj_t* parent) {
     /* 状态卡片: 靠屏幕右半区 (卡片 60% 宽, 从右侧向内收, 不与左侧设置列表重叠) */
     lv_obj_t* sp_panel = status_panel_create(parent, LV_PCT(60), LV_PCT(60));
     lv_obj_align(sp_panel, LV_ALIGN_RIGHT_MID, -20, 0);
 
-    lv_obj_t* label = lv_label_create(sp_panel);
-    lv_font_t* font = get_font(FONT_TYPE_CN, 30);
-    if (font != NULL) {
-        lv_obj_set_style_text_font(label, font, LV_STATE_DEFAULT);
-    }
-    lv_obj_set_style_text_color(label, lv_color_white(), LV_STATE_DEFAULT);
-    lv_label_set_text(label, "wifi连接");
-    lv_obj_align(label, LV_ALIGN_TOP_MID, 0, -10);
-
-    /* WiFi 连接条: 账号输入 + 密码输入 + 连接按钮, 融入卡片中部偏下 */
-    wifi_connect_bar_t wifi_bar = wifi_connect_bar_create(sp_panel, LV_PCT(100), 46);
-    lv_obj_align(wifi_bar.bar, LV_ALIGN_BOTTOM_MID, 0, -20);
-
-    /* 字体设在整条上, 输入框/按钮文案经继承链自动生效 (中文必需) */
-    lv_font_t* font_bar = get_font(FONT_TYPE_CN, 14);
-    if (font_bar != NULL) {
-        lv_obj_set_style_text_font(wifi_bar.bar, font_bar, LV_STATE_DEFAULT);
-    }
-
-    /* 屏幕键盘: 模拟器上没有实体键盘, 用鼠标点键帽给输入框送字
-       注意: 键盘放屏幕底部 (卡片只有 168px 高, 110px 的键盘放卡片里会盖住输入框) */
-    lv_obj_t* kb = lv_keyboard_create(lv_screen_active());
-    g_wifi_kb = kb;                        /* 供连接回调在开始时收起键盘 */
-    lv_obj_set_size(kb, LV_PCT(100), 110); /* 模拟器窗口矮, 键盘压到 110px */
-    lv_obj_align(kb, LV_ALIGN_BOTTOM_MID, 0, 0);
-    lv_keyboard_set_textarea(kb, wifi_bar.ssid_input); /* 默认绑定账号框 (set_textarea 自带焦点管理) */
-    /* v9.6 键盘构造时不清理 CLICK_FOCUSABLE (v8 会在构造里清), 键帽点击会把焦点从
-       输入框抢走, 导致输入到一半光标就消失. 这里手动清掉, 与 app_sdk 行为一致 */
-    lv_obj_clear_flag(kb, LV_OBJ_FLAG_CLICK_FOCUSABLE);
-    lv_obj_add_flag(kb, LV_OBJ_FLAG_HIDDEN); /* 初始隐藏, 点输入框才弹出 */
-
-    /* ---------- 键盘样式: 深蓝风格 (T113 CPU 渲染, 刻意简化) ----------
-     * 注意: 不用渐变/阴影/大圆角 —— T113 软件渲染这些每帧要几百 ms,
-     * 40 个键帽会让帧率掉到 1fps. 纯色 + 小圆角渲染最快 */
-    lv_obj_set_style_bg_opa(kb, LV_OPA_TRANSP, LV_STATE_DEFAULT);
-    lv_obj_set_style_pad_all(kb, 0, LV_STATE_DEFAULT);
-    lv_obj_set_style_pad_row(kb, 3, LV_STATE_DEFAULT);    /* 行间距 */
-    lv_obj_set_style_pad_column(kb, 3, LV_STATE_DEFAULT); /* 列间距 */
-    /* 键帽: 纯色深蓝 + 1px 描边 + 白字 */
-    lv_obj_set_style_bg_opa(kb, LV_OPA_COVER, LV_PART_ITEMS | LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_color(kb, lv_color_hex(0x2A3372), LV_PART_ITEMS | LV_STATE_DEFAULT);
-    lv_obj_set_style_radius(kb, 3, LV_PART_ITEMS | LV_STATE_DEFAULT);
-    lv_obj_set_style_border_width(kb, 1, LV_PART_ITEMS | LV_STATE_DEFAULT);
-    lv_obj_set_style_border_color(kb, lv_color_hex(0x4A54A0), LV_PART_ITEMS | LV_STATE_DEFAULT);
-    lv_obj_set_style_border_opa(kb, LV_OPA_60, LV_PART_ITEMS | LV_STATE_DEFAULT);
-    lv_obj_set_style_text_color(kb, lv_color_white(), LV_PART_ITEMS | LV_STATE_DEFAULT);
-    /* 键帽按下: 提亮 (纯色) */
-    lv_obj_set_style_bg_color(kb, lv_color_hex(0x4E57C0), LV_PART_ITEMS | LV_STATE_PRESSED);
-    /* 功能键激活 (大写锁定/符号切换): 亮紫 */
-    lv_obj_set_style_bg_color(kb, lv_color_hex(0x6B7BFF), LV_PART_ITEMS | LV_STATE_CHECKED);
-
-    /* 点击账号/密码框时, 键盘跟着切换绑定的输入框.
-       触摸点击原生会发 FOCUSED (v9 click_focusable 默认开启), 光标/键盘都靠它 */
-    lv_obj_add_event_cb(wifi_bar.ssid_input, wifi_input_focus_cb, LV_EVENT_CLICKED, kb);
-    lv_obj_add_event_cb(wifi_bar.pwd_input, wifi_input_focus_cb, LV_EVENT_CLICKED, kb);
-    lv_obj_add_event_cb(wifi_bar.ssid_input, wifi_input_focus_cb, LV_EVENT_FOCUSED, kb);
-    lv_obj_add_event_cb(wifi_bar.pwd_input, wifi_input_focus_cb, LV_EVENT_FOCUSED, kb);
-    /* 键盘 OK 键收起键盘 */
-    lv_obj_add_event_cb(kb, wifi_kb_ready_cb, LV_EVENT_READY, kb);
+    alarm_manage_create(sp_panel); /* 闹钟管理组件填充卡片 */
 
     return sp_panel;
 }
@@ -228,243 +129,415 @@ static void update_top_wifi_ui(void) {
     lv_label_set_text(g_top_wifi_label, conn ? "WIFI:已连接" : "WIFI:未连接");
 }
 
-/* ===== 加载动画 (用户图片的 8 帧旋转序列, 静态图切换, 无 transform 崩溃) ===== */
-static const char* loading_frames[] = {
-    IMAGE_PATH "iconfont_jiazai_0.png",
-    IMAGE_PATH "iconfont_jiazai_1.png",
-    IMAGE_PATH "iconfont_jiazai_2.png",
-    IMAGE_PATH "iconfont_jiazai_3.png",
-    IMAGE_PATH "iconfont_jiazai_4.png",
-    IMAGE_PATH "iconfont_jiazai_5.png",
-    IMAGE_PATH "iconfont_jiazai_6.png",
-    IMAGE_PATH "iconfont_jiazai_7.png",
-};
-#define LOADING_FRAME_CNT 8
-#define LOADING_FRAME_MS 100
-
-/* ---------- 真实连接状态机 ----------
- * wpa_manager 在独立线程跑事件循环, 回调里不能碰 LVGL (非线程安全).
- * 线程回调只写 g_conn_status 标志 (定义见文件顶部), UI 更新由主循环 100ms 轮询完成. */
-static bool g_connecting = false; /* 连接进行中 (防重复点击 + 超时判定) */
-static uint32_t g_conn_start_tick = 0;
-#define WIFI_CONN_TIMEOUT_MS 20000 /* 20s 无结果判定超时 */
-
-/* 帧切换: 每 100ms 切下一帧 (模拟旋转) */
-static void loading_frame_timer_cb(lv_timer_t* t) {
-    static int idx = 0;
-    idx = (idx + 1) % LOADING_FRAME_CNT;
-    lv_image_set_src(g_loading_img, loading_frames[idx]);
-}
-
-/* 停止加载动画: 停帧定时器 + 隐藏图标 */
-static void stop_loading(void) {
-    if (g_frame_timer != NULL) {
-        lv_timer_delete(g_frame_timer);
-        g_frame_timer = NULL;
-    }
-    if (g_loading_img != NULL)
-        lv_obj_add_flag(g_loading_img, LV_OBJ_FLAG_HIDDEN);
-}
-
-/* 开始加载动画 (同时清掉对勾/提示) */
-static void start_loading(void) {
-    stop_loading();
-    if (g_success_img != NULL)
-        lv_obj_add_flag(g_success_img, LV_OBJ_FLAG_HIDDEN);
-    if (g_hint_label != NULL)
-        lv_obj_add_flag(g_hint_label, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_clear_flag(g_loading_img, LV_OBJ_FLAG_HIDDEN);
-    g_frame_timer = lv_timer_create(loading_frame_timer_cb, LOADING_FRAME_MS, NULL);
-}
-
-/* 连接成功: 停转 + 显示对勾 3 秒后隐藏 */
-static void success_done_cb(lv_timer_t* t) {
-    g_success_timer = NULL;
-    lv_timer_delete(t);
-    lv_obj_add_flag(g_success_img, LV_OBJ_FLAG_HIDDEN);
-}
-
-static void show_success(void) {
-    stop_loading();
-    if (g_hint_label != NULL)
-        lv_obj_add_flag(g_hint_label, LV_OBJ_FLAG_HIDDEN);
-    if (g_success_timer != NULL)
-        lv_timer_delete(g_success_timer); /* 防上次的残留定时器提前隐藏 */
-    lv_obj_clear_flag(g_success_img, LV_OBJ_FLAG_HIDDEN);
-    g_success_timer = lv_timer_create(success_done_cb, 3000, NULL);
-    lv_timer_set_repeat_count(g_success_timer, 1);
-}
-
-/* 失败提示: 红字显示 3 秒后隐藏 (密码错误/超时/未填) */
-static void hint_done_cb(lv_timer_t* t) {
-    g_hint_timer = NULL;
-    lv_timer_delete(t);
-    if (g_hint_label != NULL)
-        lv_obj_add_flag(g_hint_label, LV_OBJ_FLAG_HIDDEN);
-}
-
-static void show_hint(const char* text) {
-    stop_loading();
-    if (g_success_img != NULL)
-        lv_obj_add_flag(g_success_img, LV_OBJ_FLAG_HIDDEN);
-    if (g_hint_timer != NULL)
-        lv_timer_delete(g_hint_timer);
-    lv_label_set_text(g_hint_label, text);
-    lv_obj_clear_flag(g_hint_label, LV_OBJ_FLAG_HIDDEN);
-    g_hint_timer = lv_timer_create(hint_done_cb, 3000, NULL);
-    lv_timer_set_repeat_count(g_hint_timer, 1);
-}
-
 /* wpa_manager 事件线程回调 → 只写标志位, 绝不操作 LVGL (非线程安全) */
 void wifi_status_ui_cb(WPA_WIFI_CONNECT_STATUS_E status) {
     g_conn_status = status;
 }
 
-/* 主循环轮询: 检测连接结果/超时 → 更新 UI (LVGL 主线程, 安全) */
-static void wifi_conn_poll_cb(lv_timer_t* t) {
-    /* 顶栏 WiFi 状态: 每次轮询都检查 (启动时反映真实状态, 连接/断开随时切换) */
+/* ==================== 闹钟管理组件 (左半: 闹钟设置, 右半: 倒计时) ==================== */
+
+/* 响铃: 板上 aplay 后台播放 (shell 的 & 立即返回, 不卡 UI); 模拟器跳过并打印 */
+static void alarm_play_sound(const char* path) {
+#ifdef SIMULATOR_LINUX
+    printf("[alarm] 模拟器跳过播放: %s\n", path);
+    fflush(stdout);
+#else
+    char cmd[192];
+    snprintf(cmd, sizeof(cmd), "killall aplay 2>/dev/null; aplay %s &", path);
+    system(cmd);
+#endif
+}
+
+/* 生成 "00\n01\n...\n<max>" roller 选项串, 索引即数值 (index==value) */
+static void build_roller_options(char* buf, int max_val) {
+    char* p = buf;
+    for (int i = 0; i <= max_val; i++)
+        p += sprintf(p, "%s%02d", i ? "\n" : "", i);
+}
+
+/* ---------- 闹钟设置 (左栏) ---------- */
+static lv_obj_t* g_alarm_big_label = NULL;  /* 大字 "HH:MM" */
+static lv_obj_t* g_alarm_switch = NULL;     /* 开/关胶囊按钮 */
+static lv_obj_t* g_alarm_roller_h = NULL;   /* 小时 roller (00-23) */
+static lv_obj_t* g_alarm_roller_m = NULL;   /* 分钟 roller (00-59) */
+static bool g_alarm_fired = false;          /* 本周期是否已响过铃 (edge 触发) */
+
+/* roller 变更 → 刷新大字时间 + 允许重新到点响铃 */
+static void alarm_roller_change_cb(lv_event_t* e) {
+    int h = (int)lv_roller_get_selected(g_alarm_roller_h);
+    int m = (int)lv_roller_get_selected(g_alarm_roller_m);
+    char buf[8];
+    snprintf(buf, sizeof(buf), "%02d:%02d", h, m);
+    lv_label_set_text(g_alarm_big_label, buf);
+    g_alarm_fired = false;
+}
+
+/* 开关点击: CHECKED 态取反, 文案 开/关 同步 */
+static void alarm_switch_cb(lv_event_t* e) {
+    lv_obj_t* btn = lv_event_get_target(e);
+    if (lv_obj_has_state(btn, LV_STATE_CHECKED))
+        lv_obj_clear_state(btn, LV_STATE_CHECKED);
+    else
+        lv_obj_add_state(btn, LV_STATE_CHECKED);
+    lv_obj_t* label = lv_event_get_user_data(e);
+    lv_label_set_text(label, lv_obj_has_state(btn, LV_STATE_CHECKED) ? "开" : "关");
+}
+
+/* 创建左栏: 大字时间 + 开关 + 时/分 roller 横条 */
+static lv_obj_t* alarm_col_left_create(lv_obj_t* parent) {
+    lv_obj_t* col = lv_obj_create(parent);
+    lv_obj_remove_style_all(col);
+    lv_obj_set_size(col, LV_PCT(100), LV_PCT(100));
+    lv_obj_set_scrollable(col, false);
+
+    /* 大字时间 (40px 中文 TTF, 数字高度充裕) */
+    g_alarm_big_label = lv_label_create(col);
+    lv_font_t* font_big = get_font(FONT_TYPE_CN, 40);
+    if (font_big != NULL)
+        lv_obj_set_style_text_font(g_alarm_big_label, font_big, LV_STATE_DEFAULT);
+    lv_obj_set_style_text_color(g_alarm_big_label, lv_color_white(), LV_STATE_DEFAULT);
+    lv_label_set_text(g_alarm_big_label, "07:00");
+    lv_obj_align(g_alarm_big_label, LV_ALIGN_TOP_LEFT, 0, 0);
+
+    /* 开关胶囊: 绝对定位右下角, 与右栏按钮行同处底部 */
+    lv_obj_t* sw = lv_btn_create(col);
+    lv_obj_remove_style_all(sw);
+    lv_obj_add_style(sw, &style_alarm_switch, LV_STATE_DEFAULT);
+    lv_obj_add_style(sw, &style_alarm_switch_checked, LV_STATE_CHECKED);
+    lv_obj_set_size(sw, 64, 24);
+    lv_obj_align(sw, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
+    lv_obj_set_scrollable(sw, false);
+    lv_obj_t* sw_label = lv_label_create(sw);
+    lv_font_t* font_sw = get_font(FONT_TYPE_CN, 14);
+    if (font_sw != NULL)
+        lv_obj_set_style_text_font(sw_label, font_sw, LV_STATE_DEFAULT);
+    lv_label_set_text(sw_label, "关");
+    lv_obj_center(sw_label);
+    lv_obj_add_event_cb(sw, alarm_switch_cb, LV_EVENT_CLICKED, sw_label);
+    g_alarm_switch = sw;
+
+    /* 时:分 roller 横条 (flex row 居中) */
+    lv_obj_t* bar = lv_obj_create(col);
+    lv_obj_remove_style_all(bar);
+    lv_obj_set_size(bar, 142, 57);
+    lv_obj_align(bar, LV_ALIGN_BOTTOM_MID, 0, 0);
+    lv_obj_set_style_layout(bar, LV_LAYOUT_FLEX, LV_STATE_DEFAULT);
+    lv_obj_set_style_flex_flow(bar, LV_FLEX_FLOW_ROW, LV_STATE_DEFAULT);
+    lv_obj_set_style_flex_cross_place(bar, LV_FLEX_ALIGN_CENTER, LV_STATE_DEFAULT);
+
+    char opts[256];
+    build_roller_options(opts, 23);
+    g_alarm_roller_h = lv_roller_create(bar);
+    lv_obj_remove_style_all(g_alarm_roller_h);
+    lv_obj_add_style(g_alarm_roller_h, &style_alarm_roller, LV_STATE_DEFAULT);
+    lv_obj_add_style(g_alarm_roller_h, &style_alarm_roller_sel, LV_PART_SELECTED | LV_STATE_DEFAULT);
+    lv_font_t* font_r = get_font(FONT_TYPE_CN, 14); /* 必须先设字体, set_visible_row_count 按字体算高 */
+    if (font_r != NULL)
+        lv_obj_set_style_text_font(g_alarm_roller_h, font_r, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_roller_set_options(g_alarm_roller_h, opts, LV_ROLLER_MODE_NORMAL);
+    lv_roller_set_visible_row_count(g_alarm_roller_h, 3);
+    lv_roller_set_selected(g_alarm_roller_h, 7, LV_ANIM_OFF); /* 默认 07 */
+    lv_obj_set_width(g_alarm_roller_h, 64);
+    lv_obj_set_style_text_align(g_alarm_roller_h, LV_TEXT_ALIGN_CENTER, LV_STATE_DEFAULT);
+    lv_obj_add_event_cb(g_alarm_roller_h, alarm_roller_change_cb, LV_EVENT_VALUE_CHANGED, NULL);
+
+    lv_obj_t* colon = lv_label_create(bar);
+    lv_font_t* font_c = get_font(FONT_TYPE_CN, 14);
+    if (font_c != NULL)
+        lv_obj_set_style_text_font(colon, font_c, LV_STATE_DEFAULT);
+    lv_obj_set_style_text_color(colon, lv_color_white(), LV_STATE_DEFAULT);
+    lv_label_set_text(colon, ":");
+    lv_obj_set_style_pad_left(colon, 2, LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_right(colon, 2, LV_STATE_DEFAULT);
+
+    build_roller_options(opts, 59);
+    g_alarm_roller_m = lv_roller_create(bar);
+    lv_obj_remove_style_all(g_alarm_roller_m);
+    lv_obj_add_style(g_alarm_roller_m, &style_alarm_roller, LV_STATE_DEFAULT);
+    lv_obj_add_style(g_alarm_roller_m, &style_alarm_roller_sel, LV_PART_SELECTED | LV_STATE_DEFAULT);
+    if (font_r != NULL)
+        lv_obj_set_style_text_font(g_alarm_roller_m, font_r, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_roller_set_options(g_alarm_roller_m, opts, LV_ROLLER_MODE_NORMAL);
+    lv_roller_set_visible_row_count(g_alarm_roller_m, 3);
+    lv_roller_set_selected(g_alarm_roller_m, 0, LV_ANIM_OFF); /* 默认 00 */
+    lv_obj_set_width(g_alarm_roller_m, 64);
+    lv_obj_set_style_text_align(g_alarm_roller_m, LV_TEXT_ALIGN_CENTER, LV_STATE_DEFAULT);
+    lv_obj_add_event_cb(g_alarm_roller_m, alarm_roller_change_cb, LV_EVENT_VALUE_CHANGED, NULL);
+
+    return col;
+}
+
+/* ---------- 倒计时 (右栏) ---------- */
+typedef enum { CD_IDLE, CD_RUNNING, CD_PAUSED } cd_state_t;
+
+static lv_obj_t* g_cd_label = NULL;          /* 大字 "MM:SS" */
+static lv_obj_t* g_cd_roller_m = NULL;       /* 分钟 roller (00-59) */
+static lv_obj_t* g_cd_roller_s = NULL;       /* 秒 roller (00-59) */
+static lv_obj_t* g_cd_btn_start = NULL;      /* 开始/继续 */
+static lv_obj_t* g_cd_btn_pause = NULL;      /* 暂停 */
+static lv_obj_t* g_cd_btn_reset = NULL;      /* 重置 */
+static lv_obj_t* g_cd_btn_start_label = NULL;
+static lv_obj_t* g_cd_btn_pause_label = NULL;
+static cd_state_t g_cd_state = CD_IDLE;
+static int32_t g_cd_total = 0;      /* 设定总秒数 (重置时恢复) */
+static int32_t g_cd_remaining = 0;  /* 剩余秒数 */
+
+/* 倒计时 roller 变更 → 大字实时预览设定值 (仅 IDLE 可调, 运行中 roller 已禁用) */
+static void cd_roller_change_cb(lv_event_t* e) {
+    (void)e;
+    int m = (int)lv_roller_get_selected(g_cd_roller_m);
+    int s = (int)lv_roller_get_selected(g_cd_roller_s);
+    char buf[8];
+    snprintf(buf, sizeof(buf), "%02d:%02d", m, s);
+    lv_label_set_text(g_cd_label, buf);
+}
+
+/* 状态切换后统一刷新: 大字 label + 三个按钮的禁用态/文案 */
+static void cd_update_ui(void) {
+    char buf[8];
+    snprintf(buf, sizeof(buf), "%02d:%02d", (int)(g_cd_remaining / 60), (int)(g_cd_remaining % 60));
+    lv_label_set_text(g_cd_label, buf);
+
+    bool idle = (g_cd_state == CD_IDLE);
+    bool running = (g_cd_state == CD_RUNNING);
+    lv_obj_t* m = g_cd_roller_m;
+    lv_obj_t* s = g_cd_roller_s;
+
+    /* 开始/继续: IDLE 可用, RUNNING/PAUSED 禁用 */
+    lv_obj_set_state(g_cd_btn_start, LV_STATE_DISABLED, running);
+    lv_label_set_text(g_cd_btn_start_label, (g_cd_state == CD_PAUSED) ? "继续" : "开始");
+    /* 暂停: 仅 RUNNING 可用 */
+    lv_obj_set_state(g_cd_btn_pause, LV_STATE_DISABLED, !running);
+    lv_label_set_text(g_cd_btn_pause_label, (g_cd_state == CD_PAUSED) ? "已暂停" : "暂停");
+    /* 重置: IDLE 也可用 (回到设定时长) */
+    lv_obj_set_state(g_cd_btn_reset, LV_STATE_DISABLED, false);
+    /* roller: 仅 IDLE 可调 */
+    lv_obj_set_state(m, LV_STATE_DISABLED, !idle);
+    lv_obj_set_state(s, LV_STATE_DISABLED, !idle);
+}
+
+/* 开始/继续 */
+static void cd_btn_start_cb(lv_event_t* e) {
+    if (g_cd_state == CD_RUNNING)
+        return;
+    if (g_cd_state == CD_IDLE) {
+        int m = (int)lv_roller_get_selected(g_cd_roller_m);
+        int s = (int)lv_roller_get_selected(g_cd_roller_s);
+        g_cd_total = m * 60 + s;
+        if (g_cd_total <= 0)
+            return; /* 0 秒不允许开始 */
+        g_cd_remaining = g_cd_total;
+    }
+    g_cd_state = CD_RUNNING;
+    cd_update_ui();
+}
+
+/* 暂停 */
+static void cd_btn_pause_cb(lv_event_t* e) {
+    if (g_cd_state != CD_RUNNING)
+        return;
+    g_cd_state = CD_PAUSED;
+    cd_update_ui();
+}
+
+/* 重置 */
+static void cd_btn_reset_cb(lv_event_t* e) {
+    g_cd_state = CD_IDLE;
+    g_cd_remaining = g_cd_total;
+    cd_update_ui();
+}
+
+/* 创建右栏: 大字剩余时间 + 分/秒 roller + 三个按钮 */
+static lv_obj_t* alarm_col_right_create(lv_obj_t* parent) {
+    lv_obj_t* col = lv_obj_create(parent);
+    lv_obj_remove_style_all(col);
+    lv_obj_set_size(col, LV_PCT(100), LV_PCT(100));
+    lv_obj_set_scrollable(col, false);
+
+    /* 大字剩余时间 */
+    g_cd_label = lv_label_create(col);
+    lv_font_t* font_big = get_font(FONT_TYPE_CN, 40);
+    if (font_big != NULL)
+        lv_obj_set_style_text_font(g_cd_label, font_big, LV_STATE_DEFAULT);
+    lv_obj_set_style_text_color(g_cd_label, lv_color_white(), LV_STATE_DEFAULT);
+    lv_label_set_text(g_cd_label, "05:00");
+    lv_obj_align(g_cd_label, LV_ALIGN_TOP_LEFT, 0, 0);
+
+    /* 分:秒 roller 横条: 靠左下 */
+    lv_obj_t* bar = lv_obj_create(col);
+    lv_obj_remove_style_all(bar);
+    lv_obj_set_size(bar, 142, 57);
+    lv_obj_align(bar, LV_ALIGN_BOTTOM_LEFT, 0, 0);
+    lv_obj_set_style_layout(bar, LV_LAYOUT_FLEX, LV_STATE_DEFAULT);
+    lv_obj_set_style_flex_flow(bar, LV_FLEX_FLOW_ROW, LV_STATE_DEFAULT);
+    lv_obj_set_style_flex_cross_place(bar, LV_FLEX_ALIGN_CENTER, LV_STATE_DEFAULT);
+
+    char opts[256];
+    build_roller_options(opts, 59);
+    g_cd_roller_m = lv_roller_create(bar);
+    lv_obj_remove_style_all(g_cd_roller_m);
+    lv_obj_add_style(g_cd_roller_m, &style_alarm_roller, LV_STATE_DEFAULT);
+    lv_obj_add_style(g_cd_roller_m, &style_alarm_roller_sel, LV_PART_SELECTED | LV_STATE_DEFAULT);
+    lv_font_t* font_r = get_font(FONT_TYPE_CN, 14); /* 必须先设字体 */
+    if (font_r != NULL)
+        lv_obj_set_style_text_font(g_cd_roller_m, font_r, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_roller_set_options(g_cd_roller_m, opts, LV_ROLLER_MODE_NORMAL);
+    lv_roller_set_visible_row_count(g_cd_roller_m, 3);
+    lv_roller_set_selected(g_cd_roller_m, 5, LV_ANIM_OFF); /* 默认 05 */
+    lv_obj_set_width(g_cd_roller_m, 64);
+    lv_obj_set_style_text_align(g_cd_roller_m, LV_TEXT_ALIGN_CENTER, LV_STATE_DEFAULT);
+    lv_obj_add_event_cb(g_cd_roller_m, cd_roller_change_cb, LV_EVENT_VALUE_CHANGED, NULL);
+
+    lv_obj_t* colon = lv_label_create(bar);
+    lv_font_t* font_c = get_font(FONT_TYPE_CN, 14);
+    if (font_c != NULL)
+        lv_obj_set_style_text_font(colon, font_c, LV_STATE_DEFAULT);
+    lv_obj_set_style_text_color(colon, lv_color_white(), LV_STATE_DEFAULT);
+    lv_label_set_text(colon, ":");
+    lv_obj_set_style_pad_left(colon, 2, LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_right(colon, 2, LV_STATE_DEFAULT);
+
+    g_cd_roller_s = lv_roller_create(bar);
+    lv_obj_remove_style_all(g_cd_roller_s);
+    lv_obj_add_style(g_cd_roller_s, &style_alarm_roller, LV_STATE_DEFAULT);
+    lv_obj_add_style(g_cd_roller_s, &style_alarm_roller_sel, LV_PART_SELECTED | LV_STATE_DEFAULT);
+    if (font_r != NULL)
+        lv_obj_set_style_text_font(g_cd_roller_s, font_r, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_roller_set_options(g_cd_roller_s, opts, LV_ROLLER_MODE_NORMAL);
+    lv_roller_set_visible_row_count(g_cd_roller_s, 3);
+    lv_roller_set_selected(g_cd_roller_s, 0, LV_ANIM_OFF); /* 默认 00 */
+    lv_obj_set_width(g_cd_roller_s, 64);
+    lv_obj_set_style_text_align(g_cd_roller_s, LV_TEXT_ALIGN_CENTER, LV_STATE_DEFAULT);
+    lv_obj_add_event_cb(g_cd_roller_s, cd_roller_change_cb, LV_EVENT_VALUE_CHANGED, NULL);
+
+    /* 三个小按钮: 靠右下 */
+    lv_obj_t* btn_row = lv_obj_create(col);
+    lv_obj_remove_style_all(btn_row);
+    lv_obj_set_size(btn_row, 226, 24);
+    lv_obj_align(btn_row, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
+    lv_obj_set_style_layout(btn_row, LV_LAYOUT_FLEX, LV_STATE_DEFAULT);
+    lv_obj_set_style_flex_flow(btn_row, LV_FLEX_FLOW_ROW, LV_STATE_DEFAULT);
+    lv_obj_set_style_flex_main_place(btn_row, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_STATE_DEFAULT);
+    lv_obj_set_style_flex_cross_place(btn_row, LV_FLEX_ALIGN_CENTER, LV_STATE_DEFAULT);
+
+    lv_font_t* font_btn = get_font(FONT_TYPE_CN, 14);
+
+    g_cd_btn_start = lv_btn_create(btn_row);
+    lv_obj_remove_style_all(g_cd_btn_start);
+    lv_obj_add_style(g_cd_btn_start, &style_alarm_small_btn, LV_STATE_DEFAULT);
+    lv_obj_add_style(g_cd_btn_start, &style_alarm_small_btn_pressed, LV_STATE_PRESSED);
+    lv_obj_add_style(g_cd_btn_start, &style_alarm_small_btn_disabled, LV_STATE_DISABLED);
+    lv_obj_set_size(g_cd_btn_start, 70, 24);
+    lv_obj_set_scrollable(g_cd_btn_start, false);
+    g_cd_btn_start_label = lv_label_create(g_cd_btn_start);
+    if (font_btn != NULL)
+        lv_obj_set_style_text_font(g_cd_btn_start_label, font_btn, LV_STATE_DEFAULT);
+    lv_label_set_text(g_cd_btn_start_label, "开始");
+    lv_obj_center(g_cd_btn_start_label);
+    lv_obj_add_event_cb(g_cd_btn_start, cd_btn_start_cb, LV_EVENT_CLICKED, NULL);
+
+    g_cd_btn_pause = lv_btn_create(btn_row);
+    lv_obj_remove_style_all(g_cd_btn_pause);
+    lv_obj_add_style(g_cd_btn_pause, &style_alarm_small_btn, LV_STATE_DEFAULT);
+    lv_obj_add_style(g_cd_btn_pause, &style_alarm_small_btn_pressed, LV_STATE_PRESSED);
+    lv_obj_add_style(g_cd_btn_pause, &style_alarm_small_btn_disabled, LV_STATE_DISABLED);
+    lv_obj_set_size(g_cd_btn_pause, 70, 24);
+    lv_obj_set_scrollable(g_cd_btn_pause, false);
+    g_cd_btn_pause_label = lv_label_create(g_cd_btn_pause);
+    if (font_btn != NULL)
+        lv_obj_set_style_text_font(g_cd_btn_pause_label, font_btn, LV_STATE_DEFAULT);
+    lv_label_set_text(g_cd_btn_pause_label, "暂停");
+    lv_obj_center(g_cd_btn_pause_label);
+    lv_obj_add_event_cb(g_cd_btn_pause, cd_btn_pause_cb, LV_EVENT_CLICKED, NULL);
+
+    g_cd_btn_reset = lv_btn_create(btn_row);
+    lv_obj_remove_style_all(g_cd_btn_reset);
+    lv_obj_add_style(g_cd_btn_reset, &style_alarm_small_btn, LV_STATE_DEFAULT);
+    lv_obj_add_style(g_cd_btn_reset, &style_alarm_small_btn_pressed, LV_STATE_PRESSED);
+    lv_obj_add_style(g_cd_btn_reset, &style_alarm_small_btn_disabled, LV_STATE_DISABLED);
+    lv_obj_set_size(g_cd_btn_reset, 70, 24);
+    lv_obj_set_scrollable(g_cd_btn_reset, false);
+    lv_obj_t* reset_label = lv_label_create(g_cd_btn_reset);
+    if (font_btn != NULL)
+        lv_obj_set_style_text_font(reset_label, font_btn, LV_STATE_DEFAULT);
+    lv_label_set_text(reset_label, "重置");
+    lv_obj_center(reset_label);
+    lv_obj_add_event_cb(g_cd_btn_reset, cd_btn_reset_cb, LV_EVENT_CLICKED, NULL);
+
+    /* 初始: IDLE, 暂停/重置禁用 */
+    g_cd_total = 5 * 60;
+    g_cd_remaining = g_cd_total;
+    lv_obj_set_state(g_cd_btn_pause, LV_STATE_DISABLED, true);
+    lv_obj_set_state(g_cd_btn_reset, LV_STATE_DISABLED, true);
+    lv_obj_set_state(g_cd_btn_start, LV_STATE_DISABLED, false);
+
+    return col;
+}
+
+/* 每秒: 顶栏 WiFi 轮询 + 闹钟到点比对 + 倒计时 tick */
+static void alarm_check_timer_cb(lv_timer_t* t) {
+    /* 顶栏 WiFi 状态 (原 wifi_conn_poll_cb 的职责, 1s 粒度够) */
     update_top_wifi_ui();
 
-    if (!g_connecting)
-        return;
-
-    /* 超时: 20s 内没有 CONNECT/WRONG_KEY 结果 */
-    if (lv_tick_get() - g_conn_start_tick > WIFI_CONN_TIMEOUT_MS) {
-        g_connecting = false;
-        show_hint("连接超时");
-        return;
+    /* ---- 闹钟到点比对 (edge 触发, 防每秒重复响) ---- */
+    if (g_alarm_switch != NULL && lv_obj_has_state(g_alarm_switch, LV_STATE_CHECKED)) {
+        time_t now = time(NULL);
+        struct tm tm_now;
+        localtime_r(&now, &tm_now);
+        int set_h = (int)lv_roller_get_selected(g_alarm_roller_h);
+        int set_m = (int)lv_roller_get_selected(g_alarm_roller_m);
+        if (tm_now.tm_hour == set_h && tm_now.tm_min == set_m) {
+            if (!g_alarm_fired) {
+                g_alarm_fired = true;
+                alarm_play_sound(GET_MUSIC_PATH("audio_warn.wav"));
+            }
+        } else {
+            g_alarm_fired = false; /* 时间错开, 允许下个周期再响 */
+        }
     }
 
-    switch (g_conn_status) {
-        case WPA_WIFI_CONNECT:
-            g_connecting = false;
-            show_success();
-            break;
-        case WPA_WIFI_WRONG_KEY:
-            g_connecting = false;
-            show_hint("密码错误");
-            break;
-        default:
-            /* INACTIVE/SCANNING/DISCONNECT: 连接过程中的正常事件, 继续等 */
-            break;
+    /* ---- 倒计时 tick ---- */
+    if (g_cd_state == CD_RUNNING) {
+        g_cd_remaining--;
+        if (g_cd_remaining <= 0) {
+            alarm_play_sound(GET_MUSIC_PATH("audio_finish.wav"));
+            g_cd_state = CD_IDLE;
+            g_cd_remaining = g_cd_total;
+        }
+        char buf[8];
+        snprintf(buf, sizeof(buf), "%02d:%02d", (int)(g_cd_remaining / 60), (int)(g_cd_remaining % 60));
+        lv_label_set_text(g_cd_label, buf);
+        if (g_cd_state != CD_RUNNING)
+            cd_update_ui(); /* 结束时复位按钮/roller */
     }
 }
 
-/* 连接按钮点击: 校验输入 → 起动画 → 调硬件层连接 */
-static void connect_btn_click_cb(lv_event_t* e) {
-    if (g_connecting)
-        return; /* 连接中, 防重复点击 */
+/* 闹钟管理组件: 卡片内左右分栏, 左=闹钟设置, 右=倒计时 */
+lv_obj_t* alarm_manage_create(lv_obj_t* parent) {
+    alarm_manage_style_init();
 
-    const char* ssid = lv_textarea_get_text(g_wifi_bar.ssid_input);
-    const char* psw = lv_textarea_get_text(g_wifi_bar.pwd_input);
-    if (ssid == NULL || psw == NULL || ssid[0] == '\0' || psw[0] == '\0') {
-        show_hint("请输入账号密码");
-        return;
-    }
+    /* 根容器: flex row 两栏 + 1px 竖分隔线 */
+    lv_obj_t* root = lv_obj_create(parent);
+    lv_obj_remove_style_all(root);
+    lv_obj_set_size(root, LV_PCT(100), LV_PCT(100));
+    lv_obj_set_style_layout(root, LV_LAYOUT_FLEX, LV_STATE_DEFAULT);
+    lv_obj_set_style_flex_flow(root, LV_FLEX_FLOW_ROW, LV_STATE_DEFAULT);
+    lv_obj_set_style_flex_cross_place(root, LV_FLEX_ALIGN_CENTER, LV_STATE_DEFAULT);
 
-    /* 收起键盘, 进入连接流程 */
-    if (g_wifi_kb != NULL)
-        lv_obj_add_flag(g_wifi_kb, LV_OBJ_FLAG_HIDDEN);
-    g_connecting = true;
-    g_conn_status = WPA_WIFI_INACTIVE; /* 重置, 等 wpa 事件刷新 */
-    g_conn_start_tick = lv_tick_get();
-    start_loading();
+    lv_obj_t* col_left = alarm_col_left_create(root);
+    lv_obj_set_flex_grow(col_left, 1);
 
-    wpa_ctrl_wifi_info_t info = {0};
-    strncpy(info.ssid, ssid, sizeof(info.ssid) - 1);
-    strncpy(info.psw, psw, sizeof(info.psw) - 1);
-    printf("[wifi] connect \"%s\"\n", info.ssid);
-    wpa_manager_wifi_connect(&info);
-}
+    lv_obj_t* divider = lv_obj_create(root);
+    lv_obj_remove_style_all(divider);
+    lv_obj_add_style(divider, &style_alarm_divider, LV_STATE_DEFAULT);
+    lv_obj_set_size(divider, 1, LV_PCT(88)); /* 竖线略矮于栏高, 两端留白更柔和 */
 
-wifi_connect_bar_t wifi_connect_bar_create(lv_obj_t* parent, lv_coord_t w, lv_coord_t h) {
-    wifi_connect_bar_style_init();
+    lv_obj_t* col_right = alarm_col_right_create(root);
+    lv_obj_set_flex_grow(col_right, 1);
 
-    wifi_connect_bar_t ui = {0};
-
-    /* 1. 整条背景 */
-    ui.bar = lv_obj_create(parent);
-    lv_obj_remove_style_all(ui.bar);
-    lv_obj_add_style(ui.bar, &style_bar, LV_STATE_DEFAULT);
-    lv_obj_set_size(ui.bar, w, h);
-    lv_obj_set_scrollable(ui.bar, false);
-
-    /* 2. WiFi 账号输入框：宽度权重 2 */
-    ui.ssid_input = lv_textarea_create(ui.bar);
-    lv_obj_remove_style_all(ui.ssid_input);
-    lv_obj_add_style(ui.ssid_input, &style_input, LV_STATE_DEFAULT);
-    lv_obj_set_style_text_color(ui.ssid_input, lv_color_white(), LV_PART_TEXTAREA_PLACEHOLDER); /* 占位符白色, 更醒目 */
-    /* 光标: remove_style_all 连主题的 ta_cursor 样式(2px 竖线)也删了, 自己补上.
-       白色 2px 左竖线 + 400ms 闪烁, 聚焦 (LV_STATE_FOCUSED) 才显示 — 和 app_sdk 效果一致 */
-    lv_obj_set_style_border_width(ui.ssid_input, 2, LV_PART_CURSOR | LV_STATE_FOCUSED);
-    lv_obj_set_style_border_color(ui.ssid_input, lv_color_white(), LV_PART_CURSOR | LV_STATE_FOCUSED);
-    lv_obj_set_style_border_side(ui.ssid_input, LV_BORDER_SIDE_LEFT, LV_PART_CURSOR | LV_STATE_FOCUSED);
-    lv_obj_set_style_pad_left(ui.ssid_input, -1, LV_PART_CURSOR | LV_STATE_FOCUSED);
-    lv_obj_set_style_anim_duration(ui.ssid_input, 400, LV_PART_CURSOR | LV_STATE_FOCUSED);
-    lv_textarea_set_one_line(ui.ssid_input, true);
-    lv_textarea_set_placeholder_text(ui.ssid_input, "WiFi 账号");
-    lv_obj_set_flex_grow(ui.ssid_input, 2);
-
-    /* 3. 密码输入框：宽度权重 2，开启密码遮挡 */
-    ui.pwd_input = lv_textarea_create(ui.bar);
-    lv_obj_remove_style_all(ui.pwd_input);
-    lv_obj_add_style(ui.pwd_input, &style_input, LV_STATE_DEFAULT);
-    lv_obj_set_style_text_color(ui.pwd_input, lv_color_white(), LV_PART_TEXTAREA_PLACEHOLDER);
-    /* 光标样式同账号框 (见上方注释) */
-    lv_obj_set_style_border_width(ui.pwd_input, 2, LV_PART_CURSOR | LV_STATE_FOCUSED);
-    lv_obj_set_style_border_color(ui.pwd_input, lv_color_white(), LV_PART_CURSOR | LV_STATE_FOCUSED);
-    lv_obj_set_style_border_side(ui.pwd_input, LV_BORDER_SIDE_LEFT, LV_PART_CURSOR | LV_STATE_FOCUSED);
-    lv_obj_set_style_pad_left(ui.pwd_input, -1, LV_PART_CURSOR | LV_STATE_FOCUSED);
-    lv_obj_set_style_anim_duration(ui.pwd_input, 400, LV_PART_CURSOR | LV_STATE_FOCUSED);
-    lv_textarea_set_one_line(ui.pwd_input, true);
-    lv_textarea_set_password_mode(ui.pwd_input, true);
-    lv_textarea_set_placeholder_text(ui.pwd_input, "密码");
-    lv_obj_set_flex_grow(ui.pwd_input, 2);
-
-    /* 4. 连接按钮：宽度权重 1（比两个输入框窄一些）, 高度填满条 (flex 默认按内容高太扁) */
-    ui.connect_btn = lv_btn_create(ui.bar);
-    lv_obj_remove_style_all(ui.connect_btn);
-    lv_obj_add_style(ui.connect_btn, &style_btn, LV_STATE_DEFAULT);
-    lv_obj_add_style(ui.connect_btn, &style_btn_pressed, LV_STATE_PRESSED);
-    lv_obj_set_flex_grow(ui.connect_btn, 1);
-    lv_obj_set_height(ui.connect_btn, LV_PCT(100)); /* 填满条内容区高度 */
-    lv_obj_set_scrollable(ui.connect_btn, false);
-
-    lv_obj_t* btn_label = lv_label_create(ui.connect_btn);
-    lv_obj_add_style(btn_label, &style_btn_label, LV_STATE_DEFAULT);
-    lv_label_set_text(btn_label, "连接");
-    lv_obj_center(btn_label);
-
-    /* 5. 加载动画: 用户图片的 8 帧旋转序列, 点击"连接"后才转
-       注意: 帧序列 = 静态图切换 (lv_image_set_src), 无 transform, T113 上安全 */
-    ui.loading_img = lv_image_create(ui.bar);
-    lv_image_set_src(ui.loading_img, loading_frames[0]);
-    lv_obj_set_size(ui.loading_img, 24, 24);
-    lv_obj_add_flag(ui.loading_img, LV_OBJ_FLAG_HIDDEN); /* 初始隐藏 */
-    g_loading_img = ui.loading_img;
-
-    /* 6. 连接成功图标: 对勾, 加载完成后显示 */
-    ui.success_img = lv_image_create(ui.bar);
-    lv_image_set_src(ui.success_img, IMAGE_PATH "iconfont_zhenque.png");
-    lv_obj_set_size(ui.success_img, 28, 28);
-    lv_obj_add_flag(ui.success_img, LV_OBJ_FLAG_HIDDEN);
-    g_success_img = ui.success_img;
-
-    /* 7. 失败提示文字: 密码错误/连接超时等, 红色, 默认隐藏 */
-    ui.hint_label = lv_label_create(ui.bar);
-    lv_obj_set_style_text_color(ui.hint_label, lv_color_hex(0xFF6B6B), LV_STATE_DEFAULT);
-    lv_label_set_text(ui.hint_label, "");
-    lv_obj_add_flag(ui.hint_label, LV_OBJ_FLAG_HIDDEN);
-    g_hint_label = ui.hint_label;
-
-    /* 连接按钮点击 → 真实 WiFi 连接 (加载动画跟随连接流程) */
-    lv_obj_add_event_cb(ui.connect_btn, connect_btn_click_cb, LV_EVENT_CLICKED, NULL);
-
-    /* 连接结果轮询: 100ms 查一次 wpa 线程写下的状态标志 (UI 更新只在主循环, 线程安全) */
-    lv_timer_create(wifi_conn_poll_cb, 100, NULL);
-
-    g_wifi_bar = ui; /* 保存引用, 供点击回调读取输入内容 */
-    return ui;
+    /* 每秒刷新: 顶栏 WiFi + 闹钟到点 + 倒计时 */
+    lv_timer_create(alarm_check_timer_cb, 1000, NULL);
+    return root;
 }
 
 void set_init(void) {

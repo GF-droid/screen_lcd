@@ -386,65 +386,82 @@ lv_obj_t * chip_bubble_create(lv_obj_t * parent, lv_coord_t w, lv_coord_t h, con
     return chip;
 }
 
-/* -------------------- WiFi 连接条组件 -------------------- */
-/* 注意: 样式不能 static, page_set.c 里的 wifi_connect_bar_create 要用 (见 page_conf.h extern) */
-lv_style_t style_bar;         /* 整条背景: 半透明深色圆角底 */
-lv_style_t style_input;       /* 输入框: 深色底 + 淡蓝描边 */
-lv_style_t style_btn;         /* 连接按钮: 玻璃渐变 */
-lv_style_t style_btn_pressed; /* 连接按钮按下态 */
-lv_style_t style_btn_label;   /* 按钮文案 */
-static bool wifi_bar_style_inited = false;
+/* -------------------- 闹钟管理组件样式 (非 static, page_set.c 的 alarm_manage_create 要用) -------------------- */
+lv_style_t style_alarm_roller;          /* roller 主体: 文字白色, 无背景 */
+lv_style_t style_alarm_roller_sel;      /* roller 选中行: 半透明提亮 + 淡蓝描边 */
+lv_style_t style_alarm_switch;          /* 闹钟开关: 关态深蓝灰 */
+lv_style_t style_alarm_switch_checked;  /* 闹钟开关: 开态提亮渐变 */
+lv_style_t style_alarm_small_btn;       /* 倒计时小按钮: 深蓝玻璃胶囊 */
+lv_style_t style_alarm_small_btn_pressed;
+lv_style_t style_alarm_small_btn_disabled;
+lv_style_t style_alarm_divider;         /* 左右分栏的 1px 竖分隔线 */
+static bool alarm_manage_style_inited = false;
 
-void wifi_connect_bar_style_init(void) {
-    if (wifi_bar_style_inited)
+void alarm_manage_style_init(void) {
+    if (alarm_manage_style_inited)
         return;
-    wifi_bar_style_inited = true;
+    alarm_manage_style_inited = true;
 
-    /* ---------- 整条背景: 半透明深蓝底, 内部 flex 横向排 [输入框][输入框][按钮] ---------- */
-    lv_style_init(&style_bar);
-    lv_style_set_radius(&style_bar, 14);
-    lv_style_set_bg_opa(&style_bar, LV_OPA_60);
-    lv_style_set_bg_color(&style_bar, lv_color_hex(0x1A2150));
-    lv_style_set_border_width(&style_bar, 1);
-    lv_style_set_border_color(&style_bar, lv_color_hex(0x9DB4FF));
-    lv_style_set_border_opa(&style_bar, LV_OPA_30);
-    lv_style_set_pad_all(&style_bar, 6);
-    lv_style_set_pad_column(&style_bar, 8); /* 三个子元素的间距 */
-    lv_style_set_layout(&style_bar, LV_LAYOUT_FLEX);
-    lv_style_set_flex_flow(&style_bar, LV_FLEX_FLOW_ROW);
-    lv_style_set_flex_cross_place(&style_bar, LV_FLEX_ALIGN_CENTER); /* 垂直居中 */
+    /* ---------- roller 主体: 白色文字, 无背景 (选中行由 SELECTED part 负责) ---------- */
+    lv_style_init(&style_alarm_roller);
+    lv_style_set_text_color(&style_alarm_roller, lv_color_white());
+    lv_style_set_bg_opa(&style_alarm_roller, LV_OPA_TRANSP);
+    lv_style_set_pad_all(&style_alarm_roller, 0);
 
-    /* ---------- 输入框: 深色底 + 亮蓝描边 (增强可见性), 文字白色 (字体从父链继承) ---------- */
-    lv_style_init(&style_input);
-    lv_style_set_radius(&style_input, 8);
-    lv_style_set_bg_opa(&style_input, LV_OPA_90);
-    lv_style_set_bg_color(&style_input, lv_color_hex(0x101A3E)); /* 比卡片底稍亮, 输入框明显 */
-    lv_style_set_border_width(&style_input, 2);                  /* 1→2px, 更醒目 */
-    lv_style_set_border_color(&style_input, lv_color_hex(0xB8C8FF));
-    lv_style_set_border_opa(&style_input, LV_OPA_70);            /* 30→70% */
-    lv_style_set_text_color(&style_input, lv_color_white());
-    lv_style_set_pad_left(&style_input, 10);
-    lv_style_set_pad_right(&style_input, 10);
+    /* ---------- roller 选中行: 半透明提亮 + 淡蓝描边 (纯色矩形, T113 渲染便宜) ---------- */
+    lv_style_init(&style_alarm_roller_sel);
+    lv_style_set_bg_opa(&style_alarm_roller_sel, LV_OPA_40);
+    lv_style_set_bg_color(&style_alarm_roller_sel, lv_color_hex(0x6B7BFF));
+    lv_style_set_radius(&style_alarm_roller_sel, 10);
+    lv_style_set_border_width(&style_alarm_roller_sel, 1);
+    lv_style_set_border_color(&style_alarm_roller_sel, lv_color_hex(0x9DB4FF));
+    lv_style_set_border_opa(&style_alarm_roller_sel, LV_OPA_30);
 
-    /* ---------- 连接按钮: 和气泡胶囊同风格的玻璃渐变 + 微光晕 ---------- */
-    lv_style_init(&style_btn);
-    lv_style_set_radius(&style_btn, 8);
-    lv_style_set_bg_opa(&style_btn, LV_OPA_COVER);
-    lv_style_set_bg_color(&style_btn, lv_color_hex(0x6B7BFF));      /* 按钮-顶部 */
-    lv_style_set_bg_grad_color(&style_btn, lv_color_hex(0x3A46B8)); /* 按钮-底部 */
-    lv_style_set_bg_grad_dir(&style_btn, LV_GRAD_DIR_VER);
-    lv_style_set_shadow_width(&style_btn, 8);
-    lv_style_set_shadow_color(&style_btn, lv_color_hex(0x7C86FF));
-    lv_style_set_shadow_opa(&style_btn, LV_OPA_30);
+    /* ---------- 闹钟开关: 默认(关)纯色深蓝灰, 开态提亮渐变 ---------- */
+    lv_style_init(&style_alarm_switch);
+    lv_style_set_radius(&style_alarm_switch, LV_RADIUS_CIRCLE);
+    lv_style_set_bg_opa(&style_alarm_switch, LV_OPA_COVER);
+    lv_style_set_bg_color(&style_alarm_switch, lv_color_hex(0x2E3690));
+    lv_style_set_border_width(&style_alarm_switch, 1);
+    lv_style_set_border_color(&style_alarm_switch, lv_color_hex(0x9DB4FF));
+    lv_style_set_border_opa(&style_alarm_switch, LV_OPA_30);
+    lv_style_set_text_color(&style_alarm_switch, lv_color_hex(0x8A94C8));
+    lv_style_set_pad_all(&style_alarm_switch, 0);
 
-    /* ---------- 按下态: 整体加深 ---------- */
-    lv_style_init(&style_btn_pressed);
-    lv_style_set_bg_color(&style_btn_pressed, lv_color_hex(0x4E57C0));
-    lv_style_set_bg_grad_color(&style_btn_pressed, lv_color_hex(0x2E3690));
+    lv_style_init(&style_alarm_switch_checked);
+    lv_style_set_bg_color(&style_alarm_switch_checked, lv_color_hex(0x6B7BFF));
+    lv_style_set_bg_grad_color(&style_alarm_switch_checked, lv_color_hex(0x3A46B8));
+    lv_style_set_bg_grad_dir(&style_alarm_switch_checked, LV_GRAD_DIR_VER);
+    lv_style_set_text_color(&style_alarm_switch_checked, lv_color_white());
 
-    /* ---------- 按钮文案 (字体从父链继承) ---------- */
-    lv_style_init(&style_btn_label);
-    lv_style_set_text_color(&style_btn_label, lv_color_white());
+    /* ---------- 倒计时小按钮: 深蓝玻璃胶囊 (与底部栏按钮同色系) ---------- */
+    lv_style_init(&style_alarm_small_btn);
+    lv_style_set_radius(&style_alarm_small_btn, LV_RADIUS_CIRCLE);
+    lv_style_set_bg_opa(&style_alarm_small_btn, LV_OPA_COVER);
+    lv_style_set_bg_color(&style_alarm_small_btn, lv_color_hex(0x3A46B8));
+    lv_style_set_bg_grad_color(&style_alarm_small_btn, lv_color_hex(0x222A66));
+    lv_style_set_bg_grad_dir(&style_alarm_small_btn, LV_GRAD_DIR_VER);
+    lv_style_set_border_width(&style_alarm_small_btn, 1);
+    lv_style_set_border_color(&style_alarm_small_btn, lv_color_hex(0x9DB4FF));
+    lv_style_set_border_opa(&style_alarm_small_btn, LV_OPA_40);
+    lv_style_set_text_color(&style_alarm_small_btn, lv_color_white());
+    lv_style_set_pad_all(&style_alarm_small_btn, 0);
+
+    lv_style_init(&style_alarm_small_btn_pressed);
+    lv_style_set_bg_color(&style_alarm_small_btn_pressed, lv_color_hex(0x2E3690));
+    lv_style_set_bg_grad_color(&style_alarm_small_btn_pressed, lv_color_hex(0x1A2150));
+
+    lv_style_init(&style_alarm_small_btn_disabled);
+    lv_style_set_bg_opa(&style_alarm_small_btn_disabled, LV_OPA_50);
+    lv_style_set_bg_color(&style_alarm_small_btn_disabled, lv_color_hex(0x1A2150));
+    lv_style_set_text_color(&style_alarm_small_btn_disabled, lv_color_hex(0x8A94C8));
+
+    /* ---------- 左右分栏竖线 ---------- */
+    lv_style_init(&style_alarm_divider);
+    lv_style_set_bg_opa(&style_alarm_divider, LV_OPA_20);
+    lv_style_set_bg_color(&style_alarm_divider, lv_color_hex(0x9DB4FF));
+    lv_style_set_radius(&style_alarm_divider, 0);
+    lv_style_set_pad_all(&style_alarm_divider, 0);
 }
 
 /* -------------------- 底部栏组件 (程序化绘制, 替换 bottom.png) -------------------- */
