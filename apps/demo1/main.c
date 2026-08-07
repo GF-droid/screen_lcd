@@ -1,6 +1,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <string.h>
+#include <time.h>
 #include "lv_port_disp.h"
 #include "lv_port_indev.h"
 #include "lv_port_tick.h"
@@ -50,31 +52,73 @@ static const char* connect_status_name(WPA_WIFI_CONNECT_STATUS_E s) {
 
 /* 硬件层事件回调: 连接状态一变, 这里就会被调用 */
 static void wifi_connect_cb(WPA_WIFI_CONNECT_STATUS_E status) {
-    printf("[回调] WiFi 连接状态变化 -> %d (%s)\n", status, connect_status_name(status));
+    /* 节流: wpa_supplicant 事件很密集, 每 2 秒最多打印一条, 避免刷屏淹没输入提示 */
+    static long last_ts = 0;
+    long now = time(NULL);
+    if (now - last_ts >= 2) {
+        last_ts = now;
+        printf("[回调] WiFi 连接状态变化 -> %d (%s)\n", status, connect_status_name(status));
+    }
 }
 
-/* 测试入口: 演示 open / add_callback / status / connect 四个 API */
+/* 测试入口: 从终端输入 WiFi 账号密码, 连接后观察回调状态变化 */
 static void wifi_test_run(void) {
-    printf("\n========== WiFi 功能测试开始 ==========\n");
+    printf("\n========== WiFi 连接测试开始 ==========\n");
 
     wpa_manager_add_callback(NULL, wifi_connect_cb);
     printf("[1] 注册回调完成\n");
 
     int ret = wpa_manager_open();
     printf("[2] wpa_manager_open 返回 %d (0=线程创建成功)\n", ret);
+    if (ret != 0) {
+        printf("线程创建失败, 退出测试\n");
+        exit(1);
+    }
 
-    for (int i = 0; i < 8; i++) {
+    /* 给事件线程一点时间连接 wpa_supplicant */
+    sleep(2);
+    printf("[3] 当前 WiFi 状态查询:\n");
+    wpa_manager_wifi_status();
+
+    /* 从终端读取 WiFi 账号密码 */
+    char ssid[32] = {0};
+    char psw[32] = {0};
+    printf("[4] 请输入 WiFi 名称(SSID): ");
+    fflush(stdout);
+    if (fgets(ssid, sizeof(ssid), stdin) != NULL) {
+        ssid[strcspn(ssid, "\r\n")] = '\0'; /* 去掉 fgets 带进来的换行 */
+    }
+    printf("[5] 请输入 WiFi 密码: ");
+    fflush(stdout);
+    if (fgets(psw, sizeof(psw), stdin) != NULL) {
+        psw[strcspn(psw, "\r\n")] = '\0';
+    }
+    if (strlen(ssid) == 0) {
+        printf("SSID 不能为空, 退出测试\n");
+        exit(1);
+    }
+
+    /* 调用硬件层连接 API (内部走 REMOVE/ADD/SET/ENABLE/SELECT 命令流) */
+    wpa_ctrl_wifi_info_t info;
+    strncpy(info.ssid, ssid, sizeof(info.ssid) - 1);
+    strncpy(info.psw, psw, sizeof(info.psw) - 1);
+    info.ssid[sizeof(info.ssid) - 1] = '\0';
+    info.psw[sizeof(info.psw) - 1] = '\0';
+
+    printf("[6] 正在连接 \"%s\" ... (回调会报告每个状态变化)\n", info.ssid);
+    int conn_ret = wpa_manager_wifi_connect(&info);
+    printf("    wpa_manager_wifi_connect 返回 %d (0=命令流全部执行成功)\n", conn_ret);
+
+    /* 等待 20 秒观察回调输出: CONNECT(成功) / WRONG_KEY(密码错) / SCANNING... */
+    for (int i = 0; i < 20; i++) {
         sleep(1);
-        if (i == 2) {
-            printf("[3] 主动查询一次状态 (STATUS 命令)\n");
+        if (i == 10) {
+            printf("    已过 10 秒, 再主动确认一次状态:\n");
             wpa_manager_wifi_status();
         }
-        if (i == 4) {
-            printf("[4] 尝试连接 WiFi (无硬件时会打印 wpa_supplicant 未连接)\n");
-            wpa_ctrl_wifi_info_t info = {.ssid = "TEST_SSID", .psw = "12345678"};
-            wpa_manager_wifi_connect(&info);
+        if (i % 5 == 4) {
+            printf("    等待连接结果... %ds\n", i + 1);
         }
-        printf("    测试进行中... %ds\n", i + 1);
     }
 
     printf("========== WiFi 测试结束, 退出 ==========\n");

@@ -1,6 +1,7 @@
 #include "page_conf.h"
 #include "res_conf.h"
 
+// 封装图片显示函数
 static lv_obj_t* lv_image_vewer_create(lv_obj_t* parent, const char* image_path, lv_align_t align, int32_t x_ofs, int32_t y_ofs) {
     lv_obj_t* img = lv_image_create(parent);
     lv_image_set_src(img, image_path);
@@ -8,6 +9,7 @@ static lv_obj_t* lv_image_vewer_create(lv_obj_t* parent, const char* image_path,
     return img;
 }
 
+// 设置中间组件显示图标
 static lv_obj_t* lv_image_vewer_create_with_size(lv_obj_t* parent, const char* image_path, lv_coord_t w, lv_coord_t h, char* text) {
     lv_obj_t* lv_img = chip_bubble_create(parent, w, h, text);
     lv_obj_t* img = lv_image_create(lv_img);
@@ -22,6 +24,7 @@ static lv_obj_t* lv_image_vewer_create_with_size(lv_obj_t* parent, const char* i
     return lv_img;
 }
 
+// 创建中间显示组件并且添加文字和图片
 static lv_obj_t* lv_mid_screen_componnet_create(lv_obj_t* parent) {
     /* 状态卡片: 靠屏幕右半区 (卡片 60% 宽, 从右侧向内收, 不与左侧设置列表重叠) */
     lv_obj_t* sp_panel = status_panel_create(parent, LV_PCT(60), LV_PCT(60));
