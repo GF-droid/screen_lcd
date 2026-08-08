@@ -304,7 +304,7 @@ static void hint_done_cb(lv_timer_t* t) {
 }
 
 static void show_hint(const char* text) {
-    stop_loading();
+    stop_loading();  // 停止加载动画
     if (g_success_img != NULL)
         lv_obj_add_flag(g_success_img, LV_OBJ_FLAG_HIDDEN);
     if (g_hint_timer != NULL)

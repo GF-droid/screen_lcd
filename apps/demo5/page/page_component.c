@@ -464,38 +464,23 @@ void alarm_manage_style_init(void) {
     lv_style_set_pad_all(&style_alarm_divider, 0);
 }
 
-/* -------------------- 蓝牙/亮度/音量 slider 样式 (非 static, page_set.c 的 bt_setting_create 要用) -------------------- */
-lv_style_t style_bt_slider_main;  /* 轨道: 细长深蓝紫圆角条 */
-lv_style_t style_bt_slider_ind;   /* 已滑部分: 亮蓝紫 */
-lv_style_t style_bt_slider_knob;  /* 圆钮: 白底蓝边 */
-static bool bt_slider_style_inited = false;
+/* -------------------- 日志/系统信息组件样式 (非 static, page_set.c 的 sys_update_create 要用) -------------------- */
+lv_style_t style_sys_log_bg; /* 日志底条: 半透明深色圆角条 */
+static bool sys_style_inited = false;
 
-void bt_slider_style_init(void) {
-    if (bt_slider_style_inited)
+void sys_style_init(void) {
+    if (sys_style_inited)
         return;
-    bt_slider_style_inited = true;
+    sys_style_inited = true;
 
-    /* 轨道: 6px 高圆角条, 深蓝紫 (T113 纯色渲染便宜) */
-    lv_style_init(&style_bt_slider_main);
-    lv_style_set_bg_opa(&style_bt_slider_main, LV_OPA_COVER);
-    lv_style_set_bg_color(&style_bt_slider_main, lv_color_hex(0x2E3690));
-    lv_style_set_radius(&style_bt_slider_main, LV_RADIUS_CIRCLE);
-    lv_style_set_pad_all(&style_bt_slider_main, 0);
-
-    /* 已滑部分: 亮蓝紫 */
-    lv_style_init(&style_bt_slider_ind);
-    lv_style_set_bg_opa(&style_bt_slider_ind, LV_OPA_COVER);
-    lv_style_set_bg_color(&style_bt_slider_ind, lv_color_hex(0x6B7BFF));
-    lv_style_set_radius(&style_bt_slider_ind, LV_RADIUS_CIRCLE);
-
-    /* 圆钮: 白底蓝边, 半径全圆 */
-    lv_style_init(&style_bt_slider_knob);
-    lv_style_set_bg_opa(&style_bt_slider_knob, LV_OPA_COVER);
-    lv_style_set_bg_color(&style_bt_slider_knob, lv_color_white());
-    lv_style_set_border_width(&style_bt_slider_knob, 2);
-    lv_style_set_border_color(&style_bt_slider_knob, lv_color_hex(0x6B7BFF));
-    lv_style_set_radius(&style_bt_slider_knob, LV_RADIUS_CIRCLE);
-    lv_style_set_pad_all(&style_bt_slider_knob, 0);
+    lv_style_init(&style_sys_log_bg);
+    lv_style_set_bg_opa(&style_sys_log_bg, LV_OPA_60);
+    lv_style_set_bg_color(&style_sys_log_bg, lv_color_hex(0x1A2150));
+    lv_style_set_radius(&style_sys_log_bg, 8);
+    lv_style_set_border_width(&style_sys_log_bg, 1);
+    lv_style_set_border_color(&style_sys_log_bg, lv_color_hex(0x9DB4FF));
+    lv_style_set_border_opa(&style_sys_log_bg, LV_OPA_20);
+    lv_style_set_pad_all(&style_sys_log_bg, 0);
 }
 
 /* -------------------- 底部栏组件 (程序化绘制, 替换 bottom.png) -------------------- */

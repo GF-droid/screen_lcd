@@ -1,5 +1,6 @@
 #include <string.h>
 #include <stdlib.h>
+#include <stdarg.h>
 #include <time.h>
 #include "page_conf.h"
 #include "res_conf.h"
@@ -26,13 +27,13 @@ static lv_obj_t* lv_image_vewer_create(lv_obj_t* parent, const char* image_path,
     return img;
 }
 
-// 注册中间矩形组件: 蓝牙/亮度/音量管理卡片 (左半蓝牙摆设, 右半亮度/音量 slider)
+// 注册中间矩形组件: 日志记录 + 系统更新卡片 (左半系统信息, 右半运行状态图表 + 日志)
 static lv_obj_t* lv_mid_screen_componnet_create(lv_obj_t* parent) {
     /* 状态卡片: 靠屏幕右半区 (卡片 60% 宽, 从右侧向内收, 不与左侧设置列表重叠) */
     lv_obj_t* sp_panel = status_panel_create(parent, LV_PCT(60), LV_PCT(60));
     lv_obj_align(sp_panel, LV_ALIGN_RIGHT_MID, -20, 0);
 
-    bt_setting_create(sp_panel); /* 蓝牙/亮度/音量组件填充卡片 */
+    sys_update_create(sp_panel); /* 日志/系统更新组件填充卡片 */
 
     return sp_panel;
 }
@@ -114,18 +115,20 @@ static void top_clock_timer_cb(lv_timer_t* t) {
     lv_label_set_text(g_top_time_label, buf);
 }
 
-/* 顶栏 WiFi 图标/文案: 连接成功=蓝色图标, 未连接=白色图标 (状态没变不刷新) */
-static void update_top_wifi_ui(void) {
+/* 顶栏 WiFi 图标/文案: 连接成功=蓝色图标, 未连接=白色图标 (状态没变不刷新)
+ * 返回状态是否发生变化, 变化时由 sys_timer_cb 记录日志 */
+static bool update_top_wifi_ui(void) {
     if (g_top_wifi_icon == NULL)
-        return;
+        return false;
     bool conn = (g_conn_status == WPA_WIFI_CONNECT);
     if (conn == g_top_wifi_connected)
-        return;
+        return false;
     g_top_wifi_connected = conn;
     lv_image_set_src(g_top_wifi_icon,
                      conn ? IMAGE_PATH "iconfont_wifi.png"       /* 蓝: 已连接 */
                           : IMAGE_PATH "iconfont_wifi_off.png"); /* 白: 未连接 */
     lv_label_set_text(g_top_wifi_label, conn ? "WIFI:已连接" : "WIFI:未连接");
+    return true;
 }
 
 /* wpa_manager 事件线程回调 → 只写标志位, 绝不操作 LVGL (非线程安全) */
@@ -133,66 +136,200 @@ void wifi_status_ui_cb(WPA_WIFI_CONNECT_STATUS_E status) {
     g_conn_status = status;
 }
 
-/* ==================== 蓝牙 / 亮度 / 音量管理组件 ==================== */
+/* ==================== 日志记录 + 系统更新组件 ==================== */
 
-/* 亮度写入: 板上写背光 sysfs (0-255), 模拟器打印 */
-static void brt_apply(int pct) {
-#ifdef SIMULATOR_LINUX
-    printf("[backlight] %d%%\n", pct);
-    fflush(stdout);
-#else
-    char cmd[96];
-    snprintf(cmd, sizeof(cmd), "echo %d > /sys/class/backlight/backlight/brightness", pct * 255 / 100);
-    system(cmd);
-#endif
+#define SYS_FW_VERSION "v1.0.0" /* 固件版本号 (系统更新部分显示) */
+
+/* ---------- 系统信息采集: 模拟器/板上都是 Linux, 统一读 /proc 和 sysfs ---------- */
+
+/* CPU 使用率: 两次 /proc/stat 采样差 (user+nice+system+idle+iowait+irq+softirq) */
+static long g_cpu_total_prev = -1, g_cpu_idle_prev = 0;
+
+static int sys_cpu_pct(void) {
+    FILE* f = fopen("/proc/stat", "r");
+    if (!f)
+        return 0;
+    long user, nice, system, idle, iowait, irq, softirq;
+    if (fscanf(f, "cpu %ld %ld %ld %ld %ld %ld %ld", &user, &nice, &system, &idle,
+               &iowait, &irq, &softirq) != 7) {
+        fclose(f);
+        return 0;
+    }
+    fclose(f);
+    long total = user + nice + system + idle + iowait + irq + softirq;
+    if (g_cpu_total_prev < 0) { /* 首次采样无差值 */
+        g_cpu_total_prev = total;
+        g_cpu_idle_prev = idle;
+        return 0;
+    }
+    long d_total = total - g_cpu_total_prev;
+    long d_idle = idle - g_cpu_idle_prev;
+    g_cpu_total_prev = total;
+    g_cpu_idle_prev = idle;
+    if (d_total <= 0)
+        return 0;
+    return (int)(100 * (d_total - d_idle) / d_total);
 }
 
-/* 音量写入: 板上 amixer 调 Soft Volume Master (0-255), 模拟器打印 */
-static void vol_apply(int pct) {
-#ifdef SIMULATOR_LINUX
-    printf("[volume] %d%%\n", pct);
-    fflush(stdout);
-#else
-    char cmd[128];
-    snprintf(cmd, sizeof(cmd), "amixer -c 0 sset 'Soft Volume Master' %d%% >/dev/null 2>&1", pct);
-    system(cmd);
-#endif
-}
-
-/* 板上启动时读当前背光亮度, 模拟器/失败时用 60% */
-static int brt_read_init(void) {
-#ifndef SIMULATOR_LINUX
-    FILE* f = fopen("/sys/class/backlight/backlight/brightness", "r");
+/* 内存: /proc/meminfo, 输出 使用中 MB / 总量 MB / 使用百分比 */
+static void sys_mem_info(int* used_mb, int* total_mb, int* pct) {
+    long total_kb = 0, avail_kb = 0;
+    FILE* f = fopen("/proc/meminfo", "r");
     if (f) {
-        int raw = -1;
-        if (fscanf(f, "%d", &raw) == 1 && raw >= 0 && raw <= 255) {
-            fclose(f);
-            return raw * 100 / 255;
+        char key[32];
+        long val;
+        while (fscanf(f, "%31s %ld", key, &val) == 2) {
+            if (strcmp(key, "MemTotal:") == 0)
+                total_kb = val;
+            else if (strcmp(key, "MemAvailable:") == 0)
+                avail_kb = val;
+            if (total_kb > 0 && avail_kb > 0)
+                break;
         }
         fclose(f);
     }
-#endif
-    return 60;
+    if (total_kb <= 0) { /* 读失败兜底 */
+        total_kb = 512 * 1024;
+        avail_kb = 256 * 1024;
+    }
+    *total_mb = (int)(total_kb / 1024);
+    *used_mb = (int)((total_kb - avail_kb) / 1024);
+    *pct = (int)(100 * (total_kb - avail_kb) / total_kb);
 }
 
-/* ---------- 蓝牙栏 (纯摆设: 开关只切 UI, 不接真实蓝牙) ---------- */
-static lv_obj_t* g_bt_status_label = NULL;
+/* 温度: thermal_zone0 毫度 → 0.1°C 整数 (57.6°C -> 576); 没有则回退 45.0 */
+static int sys_temp_c10(void) {
+    FILE* f = fopen("/sys/class/thermal/thermal_zone0/temp", "r");
+    if (f) {
+        long v;
+        if (fscanf(f, "%ld", &v) == 1 && v > 0) {
+            fclose(f);
+            return (int)(v / 100);
+        }
+        fclose(f);
+    }
+    return 450;
+}
 
-/* 开关点击: CHECKED 态取反, 开关文案 + 状态大字同步 */
-static void bt_switch_cb(lv_event_t* e) {
-    lv_obj_t* btn = lv_event_get_target(e);
-    if (lv_obj_has_state(btn, LV_STATE_CHECKED))
-        lv_obj_clear_state(btn, LV_STATE_CHECKED);
+/* 运行时长: /proc/uptime 秒 */
+static long sys_uptime_sec(void) {
+    FILE* f = fopen("/proc/uptime", "r");
+    if (f) {
+        double up;
+        if (fscanf(f, "%lf", &up) == 1) {
+            fclose(f);
+            return (long)up;
+        }
+        fclose(f);
+    }
+    return 0;
+}
+
+/* 运行时长格式化: "2天23时" / "2时35分" / "5分20秒" */
+static void sys_uptime_str(long sec, char* buf, int n) {
+    if (sec >= 3600 * 24)
+        snprintf(buf, n, "%ld天%ld时", sec / 86400, (sec % 86400) / 3600);
+    else if (sec >= 3600)
+        snprintf(buf, n, "%ld时%ld分", sec / 3600, (sec % 3600) / 60);
     else
-        lv_obj_add_state(btn, LV_STATE_CHECKED);
-    lv_obj_t* label = lv_event_get_user_data(e);
-    bool on = lv_obj_has_state(btn, LV_STATE_CHECKED);
-    lv_label_set_text(label, on ? "打开" : "关闭");
-    lv_label_set_text(g_bt_status_label, on ? "连接" : "未连接");
+        snprintf(buf, n, "%ld分%ld秒", sec / 60, sec % 60);
 }
 
-/* 创建蓝牙栏: 标题 + 开关 + 状态大字 */
-static lv_obj_t* bt_col_create(lv_obj_t* parent) {
+/* 内核版本: /proc/version "Linux version 5.4.61 (...)" → "5.4.61" */
+static void sys_kernel_ver(char* buf, int n) {
+    buf[0] = '\0';
+    FILE* f = fopen("/proc/version", "r");
+    if (!f)
+        return;
+    char t1[32], t2[32], t3[64];
+    if (fscanf(f, "%31s %31s %63s", t1, t2, t3) == 3 && strcmp(t1, "Linux") == 0)
+        snprintf(buf, n, "%s", t3);
+    fclose(f);
+}
+
+/* 1 分钟负载: /proc/loadavg */
+static float sys_load1(void) {
+    FILE* f = fopen("/proc/loadavg", "r");
+    if (f) {
+        float a, b, c;
+        if (fscanf(f, "%f %f %f", &a, &b, &c) == 3) {
+            fclose(f);
+            return a;
+        }
+        fclose(f);
+    }
+    return 0;
+}
+
+/* ---------- 日志: 环形缓冲, 底条显示最近 3 条 ---------- */
+#define SYS_LOG_NUM 24  /* 环形缓冲容量 */
+#define SYS_LOG_LEN 48  /* 每条上限 (含时间戳) */
+static char g_log_buf[SYS_LOG_NUM][SYS_LOG_LEN];
+static int g_log_next = 0;   /* 下一写入位置 (环形) */
+static int g_log_count = 0;  /* 已写入条数 */
+static lv_obj_t* g_log_label = NULL;
+
+/* 追加一条日志, 带 "HH:MM:SS " 时间戳, 刷新底条显示 */
+static void sys_log_add(const char* fmt, ...) {
+    char msg[SYS_LOG_LEN];
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(msg, sizeof(msg), fmt, ap);
+    va_end(ap);
+
+    time_t now = time(NULL);
+    struct tm tm_now;
+    localtime_r(&now, &tm_now);
+    snprintf(g_log_buf[g_log_next], SYS_LOG_LEN, "%02d:%02d:%02d %s",
+             tm_now.tm_hour, tm_now.tm_min, tm_now.tm_sec, msg);
+    g_log_next = (g_log_next + 1) % SYS_LOG_NUM;
+    if (g_log_count < SYS_LOG_NUM)
+        g_log_count++;
+
+    /* 刷新显示: 最近 3 条按时间先后 (环形缓冲可能回绕) */
+    if (g_log_label == NULL)
+        return;
+    char text[SYS_LOG_LEN * 4];
+    text[0] = '\0';
+    int start = (g_log_next - g_log_count + SYS_LOG_NUM) % SYS_LOG_NUM;
+    int shown = 0;
+    for (int i = 0; i < g_log_count && shown < 3; i++) {
+        const char* line = g_log_buf[(start + i) % SYS_LOG_NUM];
+        if (shown > 0)
+            strncat(text, "\n", sizeof(text) - strlen(text) - 1);
+        strncat(text, line, sizeof(text) - strlen(text) - 1);
+        shown++;
+    }
+    lv_label_set_text(g_log_label, text);
+}
+
+/* ---------- 运行状态图表: CPU% + 内存% 双系列折线 ---------- */
+static lv_obj_t* g_chart = NULL;
+static lv_chart_series_t* g_ser_cpu = NULL;
+static lv_chart_series_t* g_ser_mem = NULL;
+
+static void sys_chart_create(lv_obj_t* parent, lv_coord_t w, lv_coord_t h) {
+    g_chart = lv_chart_create(parent);
+    lv_obj_remove_style_all(g_chart);
+    lv_obj_set_size(g_chart, w, h);
+    lv_chart_set_point_count(g_chart, 30); /* 保留最近 30 个点 (30 秒) */
+    lv_chart_set_range(g_chart, LV_CHART_AXIS_PRIMARY_Y, 0, 100);
+    lv_chart_set_update_mode(g_chart, LV_CHART_UPDATE_MODE_SHIFT); /* 新点从右进, 旧点左移 */
+    /* 网格线: LV_PART_MAIN 的 line; 系列线: LV_PART_ITEMS 的 line */
+    lv_obj_set_style_line_width(g_chart, 1, LV_PART_MAIN);
+    lv_obj_set_style_line_color(g_chart, lv_color_hex(0x9DB4FF), LV_PART_MAIN);
+    lv_obj_set_style_line_opa(g_chart, LV_OPA_20, LV_PART_MAIN);
+    lv_obj_set_style_line_width(g_chart, 2, LV_PART_ITEMS);
+    g_ser_cpu = lv_chart_add_series(g_chart, lv_color_hex(0x6B7BFF), LV_CHART_AXIS_PRIMARY_Y);
+    g_ser_mem = lv_chart_add_series(g_chart, lv_color_hex(0xA06BFF), LV_CHART_AXIS_PRIMARY_Y);
+}
+
+/* ---------- 左栏: 系统信息 / 系统更新 ---------- */
+static lv_obj_t* g_cpu_label = NULL;
+static lv_obj_t* g_mem_label = NULL;
+static lv_obj_t* g_up_label = NULL; /* 运行时长 + 负载 */
+
+static lv_obj_t* sysinfo_col_create(lv_obj_t* parent) {
     lv_obj_t* col = lv_obj_create(parent);
     lv_obj_remove_style_all(col);
     lv_obj_set_size(col, LV_PCT(100), LV_PCT(100));
@@ -204,137 +341,131 @@ static lv_obj_t* bt_col_create(lv_obj_t* parent) {
     if (font_t != NULL)
         lv_obj_set_style_text_font(title, font_t, LV_STATE_DEFAULT);
     lv_obj_set_style_text_color(title, lv_color_hex(0x8A94C8), LV_STATE_DEFAULT);
-    lv_label_set_text(title, "蓝牙");
+    lv_label_set_text(title, "系统信息");
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 0);
 
-    /* 开关胶囊: 中部 */
-    lv_obj_t* sw = lv_btn_create(col);
-    lv_obj_remove_style_all(sw);
-    lv_obj_add_style(sw, &style_alarm_switch, LV_STATE_DEFAULT);
-    lv_obj_add_style(sw, &style_alarm_switch_checked, LV_STATE_CHECKED);
-    lv_obj_set_size(sw, 64, 24);
-    lv_obj_align(sw, LV_ALIGN_CENTER, 0, -2);
-    lv_obj_set_scrollable(sw, false);
-    lv_obj_t* sw_label = lv_label_create(sw);
-    lv_font_t* font_sw = get_font(FONT_TYPE_CN, 14);
-    if (font_sw != NULL)
-        lv_obj_set_style_text_font(sw_label, font_sw, LV_STATE_DEFAULT);
-    lv_label_set_text(sw_label, "关闭");
-    lv_obj_center(sw_label);
-    lv_obj_add_event_cb(sw, bt_switch_cb, LV_EVENT_CLICKED, sw_label);
-
-    /* 状态大字 */
-    g_bt_status_label = lv_label_create(col);
+    /* CPU 大字 */
+    g_cpu_label = lv_label_create(col);
     lv_font_t* font_big = get_font(FONT_TYPE_CN, 30);
     if (font_big != NULL)
-        lv_obj_set_style_text_font(g_bt_status_label, font_big, LV_STATE_DEFAULT);
-    lv_obj_set_style_text_color(g_bt_status_label, lv_color_white(), LV_STATE_DEFAULT);
-    lv_label_set_text(g_bt_status_label, "未连接");
-    lv_obj_align(g_bt_status_label, LV_ALIGN_BOTTOM_MID, 0, 0);
+        lv_obj_set_style_text_font(g_cpu_label, font_big, LV_STATE_DEFAULT);
+    lv_obj_set_style_text_color(g_cpu_label, lv_color_white(), LV_STATE_DEFAULT);
+    lv_label_set_text(g_cpu_label, "CPU 0%");
+    lv_obj_align(g_cpu_label, LV_ALIGN_TOP_MID, 0, 20);
+
+    /* 内存 / 温度 */
+    g_mem_label = lv_label_create(col);
+    lv_font_t* font_m = get_font(FONT_TYPE_CN, 12);
+    if (font_m != NULL)
+        lv_obj_set_style_text_font(g_mem_label, font_m, LV_STATE_DEFAULT);
+    lv_obj_set_style_text_color(g_mem_label, lv_color_hex(0xE6ECFF), LV_STATE_DEFAULT);
+    lv_label_set_text(g_mem_label, "内存 --/--MB  温度 --°C");
+    lv_obj_align(g_mem_label, LV_ALIGN_TOP_MID, 0, 60);
+
+    /* 内核 + 固件版本 (静态, 系统更新部分) */
+    char kv[16];
+    sys_kernel_ver(kv, sizeof(kv));
+    lv_obj_t* info = lv_label_create(col);
+    if (font_m != NULL)
+        lv_obj_set_style_text_font(info, font_m, LV_STATE_DEFAULT);
+    lv_obj_set_style_text_color(info, lv_color_hex(0xE6ECFF), LV_STATE_DEFAULT);
+    lv_label_set_text_fmt(info, "内核 %s  固件 " SYS_FW_VERSION, kv);
+    lv_obj_align(info, LV_ALIGN_TOP_MID, 0, 78);
+
+    /* 运行时长 + 负载 */
+    g_up_label = lv_label_create(col);
+    if (font_m != NULL)
+        lv_obj_set_style_text_font(g_up_label, font_m, LV_STATE_DEFAULT);
+    lv_obj_set_style_text_color(g_up_label, lv_color_hex(0xE6ECFF), LV_STATE_DEFAULT);
+    lv_label_set_text(g_up_label, "运行 --  负载 --");
+    lv_obj_align(g_up_label, LV_ALIGN_BOTTOM_MID, 0, 0);
 
     return col;
 }
 
-/* ---------- 亮度/音量 (右栏, 上下两半) ---------- */
-static lv_obj_t* g_brt_label = NULL;
-static lv_obj_t* g_vol_label = NULL;
-
-/* 亮度 slider: 拖动中大字实时跟随, 松手才写硬件 (避免拖动时频繁写 sysfs) */
-static void brt_slider_cb(lv_event_t* e) {
-    lv_obj_t* slider = lv_event_get_target(e);
-    int val = (int)lv_slider_get_value(slider);
-    char buf[8];
-    snprintf(buf, sizeof(buf), "%d%%", val);
-    lv_label_set_text(g_brt_label, buf);
-    if (lv_event_get_code(e) == LV_EVENT_RELEASED)
-        brt_apply(val);
-}
-
-/* 音量 slider: 同亮度, 松手写 amixer */
-static void vol_slider_cb(lv_event_t* e) {
-    lv_obj_t* slider = lv_event_get_target(e);
-    int val = (int)lv_slider_get_value(slider);
-    char buf[8];
-    snprintf(buf, sizeof(buf), "%d%%", val);
-    lv_label_set_text(g_vol_label, buf);
-    if (lv_event_get_code(e) == LV_EVENT_RELEASED)
-        vol_apply(val);
-}
-
-/* 单条调节行: 标题(上) + 大字(左) + slider(右, 垂直居中) */
-static void brtvol_row_create(lv_obj_t* parent, const char* title, int init_pct,
-                              lv_obj_t** label_out, lv_event_cb_t cb) {
-    /* 标题 */
-    lv_obj_t* title_l = lv_label_create(parent);
-    lv_font_t* font_t = get_font(FONT_TYPE_CN, 14);
-    if (font_t != NULL)
-        lv_obj_set_style_text_font(title_l, font_t, LV_STATE_DEFAULT);
-    lv_obj_set_style_text_color(title_l, lv_color_hex(0x8A94C8), LV_STATE_DEFAULT);
-    lv_label_set_text(title_l, title);
-    lv_obj_align(title_l, LV_ALIGN_TOP_MID, 0, 0);
-
-    /* 大字百分比 */
-    lv_obj_t* label = lv_label_create(parent);
-    lv_font_t* font_v = get_font(FONT_TYPE_CN, 30);
-    if (font_v != NULL)
-        lv_obj_set_style_text_font(label, font_v, LV_STATE_DEFAULT);
-    lv_obj_set_style_text_color(label, lv_color_white(), LV_STATE_DEFAULT);
-    char buf[8];
-    snprintf(buf, sizeof(buf), "%d%%", init_pct);
-    lv_label_set_text(label, buf);
-    lv_obj_align(label, LV_ALIGN_LEFT_MID, 0, 6);
-    *label_out = label;
-
-    /* slider: 点轨道跳转 / 拖动连续调 */
-    lv_obj_t* slider = lv_slider_create(parent);
-    lv_obj_remove_style_all(slider);
-    lv_obj_add_style(slider, &style_bt_slider_main, LV_STATE_DEFAULT);
-    lv_obj_add_style(slider, &style_bt_slider_ind, LV_PART_INDICATOR);
-    lv_obj_add_style(slider, &style_bt_slider_knob, LV_PART_KNOB);
-    lv_obj_set_size(slider, 230, 24);
-    lv_slider_set_range(slider, 0, 100);
-    lv_slider_set_value(slider, init_pct, LV_ANIM_OFF);
-    lv_obj_align(slider, LV_ALIGN_RIGHT_MID, 0, 6);
-    lv_obj_set_scrollable(slider, false);
-    lv_obj_add_event_cb(slider, cb, LV_EVENT_VALUE_CHANGED, NULL);
-    lv_obj_add_event_cb(slider, cb, LV_EVENT_RELEASED, NULL);
-}
-
-/* 创建右栏: 上半亮度, 下半音量 */
-static lv_obj_t* brtvol_col_create(lv_obj_t* parent) {
+/* ---------- 右栏: 运行状态图表 + 日志记录 ---------- */
+static lv_obj_t* status_col_create(lv_obj_t* parent) {
     lv_obj_t* col = lv_obj_create(parent);
     lv_obj_remove_style_all(col);
     lv_obj_set_size(col, LV_PCT(100), LV_PCT(100));
     lv_obj_set_scrollable(col, false);
 
-    /* 上半: 亮度 (初始值读板上当前背光) */
-    lv_obj_t* half1 = lv_obj_create(col);
-    lv_obj_remove_style_all(half1);
-    lv_obj_set_size(half1, LV_PCT(100), LV_PCT(50));
-    lv_obj_align(half1, LV_ALIGN_TOP_MID, 0, 0);
-    lv_obj_set_scrollable(half1, false);
-    brtvol_row_create(half1, "亮度", brt_read_init(), &g_brt_label, brt_slider_cb);
+    /* 标题 */
+    lv_obj_t* title = lv_label_create(col);
+    lv_font_t* font_t = get_font(FONT_TYPE_CN, 14);
+    if (font_t != NULL)
+        lv_obj_set_style_text_font(title, font_t, LV_STATE_DEFAULT);
+    lv_obj_set_style_text_color(title, lv_color_hex(0x8A94C8), LV_STATE_DEFAULT);
+    lv_label_set_text(title, "运行状态");
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 0);
 
-    /* 下半: 音量 (默认 80%) */
-    lv_obj_t* half2 = lv_obj_create(col);
-    lv_obj_remove_style_all(half2);
-    lv_obj_set_size(half2, LV_PCT(100), LV_PCT(50));
-    lv_obj_align(half2, LV_ALIGN_BOTTOM_MID, 0, 0);
-    lv_obj_set_scrollable(half2, false);
-    brtvol_row_create(half2, "音量", 80, &g_vol_label, vol_slider_cb);
+    /* 折线图表: 全宽 × 50, 标题下方 */
+    sys_chart_create(col, LV_PCT(100), 50);
+    lv_obj_align(g_chart, LV_ALIGN_TOP_MID, 0, 20);
+
+    /* 日志底条: 半透明深色圆角条, 显示最近 3 条事件 */
+    lv_obj_t* log_box = lv_obj_create(col);
+    lv_obj_remove_style_all(log_box);
+    lv_obj_add_style(log_box, &style_sys_log_bg, LV_STATE_DEFAULT);
+    lv_obj_set_size(log_box, LV_PCT(100), 44);
+    lv_obj_align(log_box, LV_ALIGN_BOTTOM_MID, 0, 0);
+    lv_obj_set_scrollable(log_box, false);
+
+    g_log_label = lv_label_create(log_box);
+    lv_font_t* font_l = get_font(FONT_TYPE_CN, 12);
+    if (font_l != NULL)
+        lv_obj_set_style_text_font(g_log_label, font_l, LV_STATE_DEFAULT);
+    lv_obj_set_style_text_color(g_log_label, lv_color_hex(0xE6ECFF), LV_STATE_DEFAULT);
+    lv_label_set_text(g_log_label, "等待事件…");
+    lv_obj_align(g_log_label, LV_ALIGN_LEFT_MID, 10, 0);
 
     return col;
 }
 
-/* 每秒: 顶栏 WiFi 状态轮询 */
-static void bt_check_timer_cb(lv_timer_t* t) {
+/* ---------- 每秒刷新: 采样 + 图表 + 数值 + WiFi/温度日志 ---------- */
+static bool g_hot_logged = false; /* 温度告警日志去重 (回落后可再触发) */
+
+static void sys_timer_cb(lv_timer_t* t) {
+    /* 顶栏 WiFi 轮询: 状态变化时记日志 */
     update_top_wifi_ui();
+
+    /* 采样 */
+    int cpu = sys_cpu_pct();
+    int used_mb, total_mb, mem_pct;
+    sys_mem_info(&used_mb, &total_mb, &mem_pct);
+    int temp = sys_temp_c10();
+    char up[24];
+    sys_uptime_str(sys_uptime_sec(), up, sizeof(up));
+
+    /* 图表: 每点 1 秒, 滚动 30 点 */
+    if (g_chart != NULL) {
+        lv_chart_set_next_value(g_chart, g_ser_cpu, cpu);
+        lv_chart_set_next_value(g_chart, g_ser_mem, mem_pct);
+        lv_chart_refresh(g_chart);
+    }
+
+    /* 数值 */
+    if (g_cpu_label != NULL)
+        lv_label_set_text_fmt(g_cpu_label, "CPU %d%%", cpu);
+    if (g_mem_label != NULL)
+        lv_label_set_text_fmt(g_mem_label, "内存 %d/%dMB  温度 %d.%d°C",
+                              used_mb, total_mb, temp / 10, temp % 10);
+    if (g_up_label != NULL)
+        lv_label_set_text_fmt(g_up_label, "运行 %s  负载 %.2f", up, sys_load1());
+
+    /* 温度告警日志 (65°C 阈值, 回落后再触发) */
+    if (temp >= 650 && !g_hot_logged) {
+        g_hot_logged = true;
+        sys_log_add("温度过高 %d.%d°C", temp / 10, temp % 10);
+    } else if (temp < 650) {
+        g_hot_logged = false;
+    }
 }
 
-/* 蓝牙/亮度/音量组件: 卡片内左右分栏, 左=蓝牙摆设, 右=亮度/音量 */
-lv_obj_t* bt_setting_create(lv_obj_t* parent) {
-    alarm_manage_style_init(); /* 复用开关胶囊/分隔线样式 */
-    bt_slider_style_init();
+/* 日志记录 + 系统更新组件: 卡片内左右分栏, 左=系统信息/版本, 右=图表+日志 */
+lv_obj_t* sys_update_create(lv_obj_t* parent) {
+    alarm_manage_style_init(); /* 复用分隔线样式 */
+    sys_style_init();
 
     /* 根容器: flex row 两栏 + 1px 竖分隔线 */
     lv_obj_t* root = lv_obj_create(parent);
@@ -344,7 +475,7 @@ lv_obj_t* bt_setting_create(lv_obj_t* parent) {
     lv_obj_set_style_flex_flow(root, LV_FLEX_FLOW_ROW, LV_STATE_DEFAULT);
     lv_obj_set_style_flex_cross_place(root, LV_FLEX_ALIGN_CENTER, LV_STATE_DEFAULT);
 
-    lv_obj_t* col_left = bt_col_create(root);
+    lv_obj_t* col_left = sysinfo_col_create(root);
     lv_obj_set_flex_grow(col_left, 1);
 
     lv_obj_t* divider = lv_obj_create(root);
@@ -352,11 +483,12 @@ lv_obj_t* bt_setting_create(lv_obj_t* parent) {
     lv_obj_add_style(divider, &style_alarm_divider, LV_STATE_DEFAULT);
     lv_obj_set_size(divider, 1, LV_PCT(88)); /* 竖线略矮于栏高, 两端留白更柔和 */
 
-    lv_obj_t* col_right = brtvol_col_create(root);
+    lv_obj_t* col_right = status_col_create(root);
     lv_obj_set_flex_grow(col_right, 1);
 
-    /* 每秒刷新顶栏 WiFi */
-    lv_timer_create(bt_check_timer_cb, 1000, NULL);
+    /* 启动日志 + 每秒采样刷新 */
+    sys_log_add("系统启动");
+    lv_timer_create(sys_timer_cb, 1000, NULL);
     return root;
 }
 
@@ -385,7 +517,7 @@ void set_init(void) {
     settings_row_t row_alarm = row_add_clickable(panel, IMAGE_PATH "iconfont_laoz.png", "闹钟管理", "闹钟管理");
     settings_row_t row_log = row_add_clickable(panel, IMAGE_PATH "iconfont_riz.png", "日志记录", "系统更新");
 
-    settings_row_set_selected(&row_alarm, true); /* 初始选中第 3 行 */
+    settings_row_set_selected(&row_log, true); /* 初始选中"日志记录/系统更新"行 */
 
     lv_obj_t* sp_panel = lv_mid_screen_componnet_create(lv_screen_active());
     lv_obj_align_to(sp_panel, panel, LV_ALIGN_OUT_RIGHT_MID, 66, 0);

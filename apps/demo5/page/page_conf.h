@@ -29,10 +29,10 @@ settings_row_t row_add_clickable(lv_obj_t* panel, const char* icon_path, const c
 /* 气泡胶囊组件 (玻璃质感, 内部 [图标槽] [文案]) */
 lv_obj_t* chip_bubble_create(lv_obj_t* parent, lv_coord_t w, lv_coord_t h, const char* text);
 
-/* 蓝牙/亮度/音量管理组件: 左栏蓝牙(摆设开关), 右栏亮度/音量 slider (板上实际写背光 sysfs + amixer) */
-void alarm_manage_style_init(void); /* 开关/分隔线等通用样式 (蓝牙复用) */
-void bt_slider_style_init(void);
-lv_obj_t* bt_setting_create(lv_obj_t* parent);
+/* 日志记录 + 系统更新组件: 左栏系统信息/版本, 右栏运行状态图表 + 日志底条 */
+void alarm_manage_style_init(void); /* 开关/分隔线等通用样式 */
+void sys_style_init(void);
+lv_obj_t* sys_update_create(lv_obj_t* parent);
 /* 程序化底部栏 (替换 bottom.png): 全宽半透明渐变横条, 返回容器对象 */
 lv_obj_t* bottom_bar_create(lv_obj_t* parent);
 /* 底部栏配套按钮 (深蓝玻璃胶囊, 与底部栏同色系) */
@@ -43,8 +43,6 @@ void wifi_status_ui_cb(WPA_WIFI_CONNECT_STATUS_E status);
 extern lv_style_t style_alarm_switch;
 extern lv_style_t style_alarm_switch_checked;
 extern lv_style_t style_alarm_divider;
-extern lv_style_t style_bt_slider_main;
-extern lv_style_t style_bt_slider_ind;
-extern lv_style_t style_bt_slider_knob;
+extern lv_style_t style_sys_log_bg;
 
 #endif  // _PAGE_CONF_H_

@@ -24,14 +24,14 @@ static void chdir_to_app_dir(void) {
         return;
     exe[n] = '\0';
 
-    /* exe 形如 <项目根>/build/linux/apps/demo2/main, 截断到项目根 */
+    /* exe 形如 <项目根>/build/linux/apps/demo6/main, 截断到项目根 */
     char* p = strstr(exe, "/build/");
     if (!p)
         return;
     *p = '\0';
     if (chdir(exe) != 0)
         return;
-    chdir("apps/demo2"); /* 资源目录 (cwd 下应有 ./res/) */
+    chdir("apps/demo6"); /* 资源目录 (cwd 下应有 ./res/) */
 }
 #endif
 
