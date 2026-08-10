@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>screen_lcd · 超宽智能屏幕项目</title>
+<link rel="stylesheet" href="static/style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect x='4' y='4' width='92' height='92' rx='22' fill='%230B0E23' stroke='%233CE0C8' stroke-width='6'/><circle cx='50' cy='50' r='18' fill='none' stroke='%233CE0C8' stroke-width='7'/></svg>">
+</head>
+<body>
+
+<!-- ===== 粒子星空背景 ===== -->
+<canvas id="stars"></canvas>
+<div class="mouse-glow" id="mouseGlow"></div>
+<div class="bg-grid"></div>
+
+<!-- ===== 顶部导航 ===== -->
+<nav class="navbar glass" id="navbar">
+  <div class="nav-inner">
+    <div class="logo">
+      <span class="logo-dot"></span>
+      <span class="logo-text">screen_lcd</span>
+    </div>
+    <div class="nav-links">
+      <a href="#hero">首页</a>
+      <a href="#showcase">实机展示</a>
+      <a href="#features">核心特性</a>
+      <a href="#stack">技术栈</a>
+      <a href="#structure">项目结构</a>
+      <a href="#api">后端 API</a>
+    </div>
+    <a class="nav-btn" href="https://github.com" target="_blank" rel="noopener">GitHub</a>
+  </div>
+</nav>
+
+<!-- ===== Hero ===== -->
+<header class="hero" id="hero">
+  <div class="hero-inner">
+    <div class="hero-badge glass reveal">
+      <span class="pulse-dot"></span> T113-S3 · LVGL 9.6 · C 语言
+    </div>
+    <h1 class="hero-title reveal">
+      <span class="grad-text">screen_lcd</span>
+    </h1>
+    <p class="hero-sub reveal" id="typer"></p>
+    <div class="hero-actions reveal">
+      <a class="btn btn-primary" href="#showcase"><span class="btn-shine"></span>开始探索</a>
+      <a class="btn btn-ghost" href="#api">查看后端 API</a>
+    </div>
+    <div class="hero-stats reveal">
+      <div class="stat"><div class="stat-num grad-text" data-count="1424">0</div><div class="stat-label">屏幕宽度 px</div></div>
+      <div class="stat"><div class="stat-num grad-text" data-count="280">0</div><div class="stat-label">屏幕高度 px</div></div>
+      <div class="stat"><div class="stat-num grad-text" data-count="9.6" data-decimal="1">0</div><div class="stat-label">LVGL 版本</div></div>
+      <div class="stat"><div class="stat-num grad-text" data-count="2">0</div><div class="stat-label">运行平台</div></div>
+    </div>
+  </div>
+  <div class="scroll-hint"><span></span></div>
+</header>
+
+<!-- ===== 实机展示 ===== -->
+<section class="section" id="showcase">
+  <h2 class="section-title reveal">实机<span class="grad-text">展示</span></h2>
+  <p class="section-desc reveal">一块 1424×280 的超宽横屏 — 玻璃拟态 · 发光描边 · 农历时钟 · 天气卡片</p>
+
+  <div class="device reveal" id="device">
+    <div class="device-frame">
+      <div class="screen-wrap">
+        <img class="screen-img active" src="assets/screen_home.png" alt="模拟器主页面">
+        <img class="screen-img" src="assets/screen_setting.png" alt="设置页面">
+        <img class="screen-img" src="assets/screen_board.png" alt="T113 板上实拍">
+      </div>
+      <div class="scanline"></div>
+      <div class="device-glow"></div>
+    </div>
+    <div class="device-caption" id="deviceCaption">模拟器 · 主页面</div>
+    <div class="device-thumbs">
+      <button class="thumb active" data-i="0" data-caption="模拟器 · 主页面">主页面</button>
+      <button class="thumb" data-i="1" data-caption="设置页面 · WiFi 连接">设置页</button>
+      <button class="thumb" data-i="2" data-caption="T113 板上实拍 · 触摸可用">板上实拍</button>
+    </div>
+  </div>
+</section>
+
+<!-- ===== 核心特性 ===== -->
+<section class="section" id="features">
+  <h2 class="section-title reveal">核心<span class="grad-text">特性</span></h2>
+  <p class="section-desc reveal">从像素到系统,每一个细节都用心打磨</p>
+
+  <div class="grid">
+    <div class="card glass reveal">
+      <div class="card-icon" style="--ic:#3CE0C8">◈</div>
+      <h3>玻璃拟态 UI</h3>
+      <p>深蓝渐变面板 + 半透明玻璃卡片 + 青色发光描边,全套自研组件库,无第三方 UI 依赖。</p>
+      <span class="card-tag">LVGL v9.6</span>
+    </div>
+    <div class="card glass reveal">
+      <div class="card-icon" style="--ic:#9DB4FF">◉</div>
+      <h3>农历时钟</h3>
+      <p>内嵌 1900–2100 年农历年表,实时显示公历 / 农历 / 天干地支,每秒走时,跨天自动重算。</p>
+      <span class="card-tag">农历年表</span>
+    </div>
+    <div class="card glass reveal">
+      <div class="card-icon" style="--ic:#7C6CFF">⌁</div>
+      <h3>WiFi 管理</h3>
+      <p>移植 wpa_manager 驱动,扫码连接、状态回传、UI 实时刷新 — 真正能连上路由器的设置页。</p>
+      <span class="card-tag">wpa_supplicant</span>
+    </div>
+    <div class="card glass reveal">
+      <div class="card-icon" style="--ic:#3CE0C8">◐</div>
+      <h3>天气卡片</h3>
+      <p>动态温湿度展示,10s 定时刷新,图标由 PIL 程序化生成 — 月亮、云朵、发光描边。</p>
+      <span class="card-tag">动态数据</span>
+    </div>
+    <div class="card glass reveal">
+      <div class="card-icon" style="--ic:#9DB4FF">▭</div>
+      <h3>超宽屏适配</h3>
+      <p>1424×280 约 5:1 超宽比例 — 四区块布局、波浪缺口提示条、独立 screen 页面互切。</p>
+      <span class="card-tag">5:1 宽高比</span>
+    </div>
+    <div class="card glass reveal">
+      <div class="card-icon" style="--ic:#7C6CFF">⇅</div>
+      <h3>双平台运行</h3>
+      <p>同一套代码:x86 Linux 模拟器快速迭代 + T113-S3 真机部署,adb 抓帧验证渲染结果。</p>
+      <span class="card-tag">T113-S3</span>
+    </div>
+  </div>
+</section>
+
+<!-- ===== 技术栈 ===== -->
+<section class="section" id="stack">
+  <h2 class="section-title reveal">技术<span class="grad-text">栈</span></h2>
+  <div class="stack-wrap reveal">
+    <div class="stack-item" style="--d:0s">LVGL <small>UI 框架</small></div>
+    <div class="stack-item" style="--d:.1s">C11 <small>语言</small></div>
+    <div class="stack-item" style="--d:.2s">CMake <small>构建</small></div>
+    <div class="stack-item" style="--d:.3s">SDL2 <small>模拟器</small></div>
+    <div class="stack-item" style="--d:.4s">wpa_supplicant <small>WiFi</small></div>
+    <div class="stack-item" style="--d:.5s">Python <small>PIL 图标生成</small></div>
+    <div class="stack-item" style="--d:.6s">Flask <small>后端</small></div>
+    <div class="stack-item" style="--d:.7s">adb <small>板端调试</small></div>
+  </div>
+</section>
+
+<!-- ===== 项目结构 ===== -->
+<section class="section" id="structure">
+  <h2 class="section-title reveal">项目<span class="grad-text">结构</span></h2>
+  <div class="terminal glass reveal">
+    <div class="terminal-head">
+      <span class="t-dot r"></span><span class="t-dot y"></span><span class="t-dot g"></span>
+      <span class="t-title">screen_lcd — tree</span>
+    </div>
+    <pre class="terminal-body" id="terminalBody"></pre>
+  </div>
+</section>
+
+<!-- ===== 后端 API ===== -->
+<section class="section" id="api">
+  <h2 class="section-title reveal">后端 <span class="grad-text">API</span></h2>
+  <p class="section-desc reveal">本页面由 Python Flask 提供 — 下方数据来自真实的后端接口</p>
+  <div class="api-grid reveal">
+    <div class="terminal glass api-terminal">
+      <div class="terminal-head">
+        <span class="t-dot r"></span><span class="t-dot y"></span><span class="t-dot g"></span>
+        <span class="t-title">GET /api/project</span>
+      </div>
+      <pre class="terminal-body json-body" id="apiBody">loading…</pre>
+    </div>
+    <div class="api-info glass">
+      <h3>为什么需要 Python 后端?</h3>
+      <ul>
+        <li><b>实时数据</b> — 项目统计由后端在启动时扫描真实代码生成,而非写死的假数据</li>
+        <li><b>易扩展</b> — 未来可接入屏幕实时画面、编译状态、触摸事件日志</li>
+        <li><b>轻量部署</b> — 单文件 Flask 应用,零数据库依赖,一条命令启动</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ===== 页脚 ===== -->
+<footer class="footer">
+  <div class="footer-inner">
+    <div class="logo"><span class="logo-dot"></span><span class="logo-text">screen_lcd</span></div>
+    <p class="footer-line">C 语言 · LVGL 9.6 · T113-S3 · 由 <span class="grad-text">Python/Flask</span> 驱动的项目介绍页</p>
+    <p class="footer-copy">© 2026 screen_lcd project</p>
+  </div>
+</footer>
+
+<script src="static/script.js"></script>
+</body>
+</html>

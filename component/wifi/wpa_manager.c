@@ -91,8 +91,16 @@ void wpa_manager_wifi_status(void) {
     }
 }
 
-// 连接WiFi
-int wpa_manager_wifi_connect(wpa_ctrl_wifi_info_t* wifi_info) {
+/* ---------- 连接请求队列 ----------
+ * wpa_ctrl_request 会阻塞最多 10s/条 (wpa_ctrl.h 官方注释), 且与事件线程并发
+ * 使用同一 socket 时可能因回复被抢而阻塞更久。
+ * 若在主线程(LVGL 回调)里直接调用, 会冻结整个 UI (时钟/触摸全停)。
+ * 因此: 主线程只提交请求立即返回, 真正执行放到事件线程. */
+static wpa_ctrl_wifi_info_t g_pending_conn;
+static volatile int g_conn_requested = 0; /* 1=有请求待执行 (单核 T113, volatile 足够) */
+
+/* 事件线程内执行真正的 wpa_supplicant 命令序列 */
+static int do_connect(const wpa_ctrl_wifi_info_t* wifi_info) {
     char reply_buf[128] = {0};
     size_t reply_len;
     int ret;
@@ -134,6 +142,15 @@ int wpa_manager_wifi_connect(wpa_ctrl_wifi_info_t* wifi_info) {
     return ret;
 }
 
+// 连接WiFi (主线程调用: 只复制参数并置标志, 立即返回, 不阻塞 LVGL 主循环)
+int wpa_manager_wifi_connect(wpa_ctrl_wifi_info_t* wifi_info) {
+    if (g_conn_requested)
+        return -1; /* 已有请求在执行中, 丢弃 (UI 层也有 g_connecting 防重复) */
+    memcpy(&g_pending_conn, wifi_info, sizeof(g_pending_conn));
+    g_conn_requested = 1; /* 先写数据再置标志; 事件线程先查标志再读数据 */
+    return 0;
+}
+
 // WiFi线程
 void* wpa_manager_event_thread(void* arg) {
     pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
@@ -151,6 +168,14 @@ void* wpa_manager_event_thread(void* arg) {
     wpa_manager_wifi_status();
     // 事件处理循环
     while (1) {
+        // 执行排队的连接请求 (主线程只提交, 这里才真正发 wpa_ctrl 命令,
+        // 避免 wpa_ctrl_request 阻塞 LVGL 主循环导致时钟/触摸冻结)
+        if (g_conn_requested) {
+            g_conn_requested = 0;
+            printf("wpa_manager: do_connect ssid=%s\n", g_pending_conn.ssid);
+            do_connect(&g_pending_conn);
+        }
+
         // 检查是否已建立与wpa_supplicant的连接，且有未处理的事件
         if (g_pstWpaCtrl && wpa_ctrl_pending(g_pstWpaCtrl) > 0) {
             char buf[512];

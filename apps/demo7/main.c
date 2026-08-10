@@ -31,7 +31,7 @@ static void chdir_to_app_dir(void) {
     *p = '\0';
     if (chdir(exe) != 0)
         return;
-    chdir("apps/demo2"); /* 资源目录 (cwd 下应有 ./res/) */
+    chdir("apps/demo7"); /* 资源目录 (cwd 下应有 ./res/) */
 }
 #endif
 
@@ -39,6 +39,8 @@ int main(void) {
 #ifdef SIMULATOR_LINUX
     chdir_to_app_dir();
 #endif
+
+    setvbuf(stdout, NULL, _IONBF, 0); /* 日志实时落盘 (调试期) */
 
     // 初始化 LVGL 库
     lv_init();
@@ -53,7 +55,6 @@ int main(void) {
     wpa_manager_add_callback(NULL, wifi_status_ui_cb);
     wpa_manager_open();
 
-    setvbuf(stdout, NULL, _IONBF, 0); /* 日志实时落盘 (调试期) */
     while (1) {
         lv_timer_handler();
         usleep(5000);
