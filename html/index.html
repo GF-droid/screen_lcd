@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>screen_lcd · 超宽智能屏幕项目</title>
+<title>screen_lcd · 桌面超宽智能屏幕</title>
 <link rel="stylesheet" href="static/style.css">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect x='4' y='4' width='92' height='92' rx='22' fill='%230B0E23' stroke='%233CE0C8' stroke-width='6'/><circle cx='50' cy='50' r='18' fill='none' stroke='%233CE0C8' stroke-width='7'/></svg>">
 </head>
@@ -24,12 +24,12 @@
     <div class="nav-links">
       <a href="#hero">首页</a>
       <a href="#showcase">实机展示</a>
+      <a href="#design">设计思路</a>
+      <a href="#parts">元器件选型</a>
       <a href="#features">核心特性</a>
-      <a href="#stack">技术栈</a>
       <a href="#structure">项目结构</a>
-      <a href="#api">后端 API</a>
     </div>
-    <a class="nav-btn" href="https://github.com" target="_blank" rel="noopener">GitHub</a>
+    <a class="nav-btn" href="#api">后端 API</a>
   </div>
 </nav>
 
@@ -37,20 +37,20 @@
 <header class="hero" id="hero">
   <div class="hero-inner">
     <div class="hero-badge glass reveal">
-      <span class="pulse-dot"></span> T113-S3 · LVGL 9.6 · C 语言
+      <span class="pulse-dot"></span> T113-S3 · LVGL 9.6 · 全自研
     </div>
     <h1 class="hero-title reveal">
       <span class="grad-text">screen_lcd</span>
     </h1>
     <p class="hero-sub reveal" id="typer"></p>
     <div class="hero-actions reveal">
-      <a class="btn btn-primary" href="#showcase"><span class="btn-shine"></span>开始探索</a>
-      <a class="btn btn-ghost" href="#api">查看后端 API</a>
+      <a class="btn btn-primary" href="#design"><span class="btn-shine"></span>看看设计思路</a>
+      <a class="btn btn-ghost" href="#parts">元器件选型</a>
     </div>
     <div class="hero-stats reveal">
       <div class="stat"><div class="stat-num grad-text" data-count="1424">0</div><div class="stat-label">屏幕宽度 px</div></div>
       <div class="stat"><div class="stat-num grad-text" data-count="280">0</div><div class="stat-label">屏幕高度 px</div></div>
-      <div class="stat"><div class="stat-num grad-text" data-count="9.6" data-decimal="1">0</div><div class="stat-label">LVGL 版本</div></div>
+      <div class="stat"><div class="stat-num grad-text" data-count="134">0</div><div class="stat-label">板上元件数</div></div>
       <div class="stat"><div class="stat-num grad-text" data-count="2">0</div><div class="stat-label">运行平台</div></div>
     </div>
   </div>
@@ -60,7 +60,7 @@
 <!-- ===== 实机展示 ===== -->
 <section class="section" id="showcase">
   <h2 class="section-title reveal">实机<span class="grad-text">展示</span></h2>
-  <p class="section-desc reveal">一块 1424×280 的超宽横屏 — 玻璃拟态 · 发光描边 · 农历时钟 · 天气卡片</p>
+  <p class="section-desc reveal">一块 1424×280 的超宽横屏 — 玻璃拟态 · 农历时钟 · 天气卡片</p>
 
   <div class="device reveal" id="device">
     <div class="device-frame">
@@ -81,44 +81,140 @@
   </div>
 </section>
 
+<!-- ===== 设计思路 ===== -->
+<section class="section" id="design">
+  <h2 class="section-title reveal">设计<span class="grad-text">思路</span></h2>
+  <p class="section-desc reveal">这块屏是从"想要一条桌面信息栏"开始做的,下面这几步决定了它长成什么样</p>
+
+  <div class="grid">
+    <div class="card glass reveal">
+      <span class="step-num">01</span>
+      <h3>为什么是一条超宽屏</h3>
+      <p>桌面上的方块屏早就看腻了,我想做的是显示器底座下面的那一条 —— 1424×280,约 5:1 的超宽比例。时间、农历、天气、系统状态排成一行,抬头扫一眼就全知道了,不占桌面也不挡视线。</p>
+    </div>
+    <div class="card glass reveal">
+      <span class="step-num">02</span>
+      <h3>主控选了 T113-S3</h3>
+      <p>低价位的国产双核 A7,但它自带显示控制器和 G2D 2D 硬件加速,跑 Linux 画 UI 完全够用。系统用 Tina Linux,启动快、接口齐,做这种信息屏没必要上更强的平台。</p>
+    </div>
+    <div class="card glass reveal">
+      <span class="step-num">03</span>
+      <h3>显示旋转踩了个大坑</h3>
+      <p>内核的 framebuffer 是 720×1424 竖屏,面板却是横着装,差 90°。一开始想直接改 fb 分辨率迁就面板,结果 line_length 对不上,画面全乱。最后决定不动内核:由 G2D 硬件旋转 90° 搬运到面板。显示转了,触摸坐标也得跟着转 —— 两者是一套互逆变换,只做一半,屏幕就点不准。</p>
+    </div>
+    <div class="card glass reveal">
+      <span class="step-num">04</span>
+      <h3>双平台开发</h3>
+      <p>先用 x86 + SDL2 模拟器迭代 UI,能自动化点击测试,改完立即看效果;再部署到 T113 真机。图片走运行时解码,换图不用重编译,直接替换板子上的文件就行。</p>
+    </div>
+    <div class="card glass reveal">
+      <span class="step-num">05</span>
+      <h3>性能:从 1fps 到流畅</h3>
+      <p>界面一度只有 1fps,排查到最后是三个原因叠一起:LVGL 自带的 FPS 监控器自己在拖慢帧率、图片缓存没开导致每帧重新解码 PNG、还有调试代码残留。缓存开到位后,全屏背景图首帧解码 432ms,之后每帧 5ms 以内。</p>
+    </div>
+    <div class="card glass reveal">
+      <span class="step-num">06</span>
+      <h3>联网 + 远程控制</h3>
+      <p>WiFi 用 wpa_supplicant 连上路由器,板端跑一个 WebSocket agent,经公网服务器中继,浏览器里打开网页就能远程调音量、亮度、设闹钟,还能看 CPU/内存实时曲线。闹钟到点由板上的 LM4871 功放推喇叭响铃。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ===== 关键元器件 ===== -->
+<section class="section" id="parts">
+  <h2 class="section-title reveal">关键<span class="grad-text">元器件</span></h2>
+  <p class="section-desc reveal">全板 100 多个元件,下面这几个是选型时纠结最多的</p>
+
+  <div class="grid">
+    <div class="card glass reveal">
+      <div class="part-head">
+        <span class="part-model">SY8088IAAC</span>
+        <span class="part-role">降压 DC-DC ×4</span>
+      </div>
+      <p>板上一共 4 颗,把 5V 输入降到各条电压轨(3.3V / 1.8V / 内核 1.1V 等)。选它主要是三点:1A 输出对这块板的所有负载都够;SOT-23-5 小封装,layout 不占地方;外围只要一个电感加两个电容,还自带过流保护和打嗝限流。4 颗用同一型号,贴片备料也省事。</p>
+    </div>
+    <div class="card glass reveal">
+      <div class="part-head">
+        <span class="part-model">W25N01GVZEIG</span>
+        <span class="part-role">1Gb SLC NAND</span>
+      </div>
+      <p>系统的"硬盘",T113 从它启动 Tina Linux。选 SLC 而不是 MLC 或 eMMC:单颗价格低、寿命长,掉电不容易坏数据,1Gb 装系统、应用和资源文件绰绰有余。Quad SPI 接口 104MHz 时钟,启动和读资源的速度都够。</p>
+    </div>
+    <div class="card glass reveal">
+      <div class="part-head">
+        <span class="part-model">MT9201</span>
+        <span class="part-role">升压 LED 驱动 · 背光</span>
+      </div>
+      <p>屏幕背光串的 LED 压降比 3.3V 高,所以用升压拓扑,3~24V 宽输入,1.2MHz 开关频率 —— 频率够高,不会在音频段产生可闻噪声。支持 PWM 和模拟两种调光:网页上拖亮度滑块,最终就是写到内核 backlight 节点,再由它做 PWM 调光,过压过流过温保护齐全。</p>
+    </div>
+    <div class="card glass reveal">
+      <div class="part-head">
+        <span class="part-model">LM4871</span>
+        <span class="part-role">音频功放 · 闹钟</span>
+      </div>
+      <p>闹钟和提示音的"嗓子"。BTL 桥式功放,5V 供电下 4Ω 负载能出 3W,桌面提示音绰绰有余。最关键的是外围极简:不需要输出耦合电容、不需要自举电容,一个芯片加几个小电容就能出声,对小板的 layout 非常友好。</p>
+    </div>
+    <div class="card glass reveal">
+      <div class="part-head">
+        <span class="part-model">AN2051-245</span>
+        <span class="part-role">2.45GHz 贴片天线</span>
+      </div>
+      <p>WiFi 天线。2.4G 频段 110MHz 带宽,1~13 信道全覆盖,0.5dBi 增益桌面环境够用。选贴片式而不是外置棒状天线:省掉馈线和接插件,板面干净,外壳也好设计。天线周围还摆了 ESD 保护和磁珠滤波,减少对电源的干扰。</p>
+    </div>
+    <div class="card glass reveal">
+      <div class="part-head">
+        <span class="part-model">32.768kHz</span>
+        <span class="part-role">RTC 晶振</span>
+      </div>
+      <p>桌面屏最主要的功能是看时间,这颗晶振就是时间的源头。32.768kHz 是标准 RTC 频率 —— 32768 = 2¹⁵,计数器一除正好得到 1Hz 秒信号,而且功耗极低。旁边那颗 24MHz 给 SoC 做主时钟,一个管秒、一个管跑系统,分工明确。</p>
+    </div>
+  </div>
+</section>
+
 <!-- ===== 核心特性 ===== -->
 <section class="section" id="features">
   <h2 class="section-title reveal">核心<span class="grad-text">特性</span></h2>
-  <p class="section-desc reveal">从像素到系统,每一个细节都用心打磨</p>
+  <p class="section-desc reveal">从驱动到页面都是自己写的,这里挑几个能直接玩的</p>
 
   <div class="grid">
     <div class="card glass reveal">
       <div class="card-icon" style="--ic:#3CE0C8">◈</div>
       <h3>玻璃拟态 UI</h3>
-      <p>深蓝渐变面板 + 半透明玻璃卡片 + 青色发光描边,全套自研组件库,无第三方 UI 依赖。</p>
+      <p>深蓝渐变面板 + 半透明玻璃卡片 + 青色发光描边,整套组件库自己写的,没有第三方 UI 依赖。</p>
       <span class="card-tag">LVGL v9.6</span>
     </div>
     <div class="card glass reveal">
       <div class="card-icon" style="--ic:#9DB4FF">◉</div>
       <h3>农历时钟</h3>
-      <p>内嵌 1900–2100 年农历年表,实时显示公历 / 农历 / 天干地支,每秒走时,跨天自动重算。</p>
+      <p>内嵌 1900–2100 年农历年表,公历 / 农历 / 天干地支一起显示,每秒走时,跨天自动重算。</p>
       <span class="card-tag">农历年表</span>
     </div>
     <div class="card glass reveal">
       <div class="card-icon" style="--ic:#7C6CFF">⌁</div>
-      <h3>WiFi 管理</h3>
-      <p>移植 wpa_manager 驱动,扫码连接、状态回传、UI 实时刷新 — 真正能连上路由器的设置页。</p>
+      <h3>WiFi 联网</h3>
+      <p>移植 wpa_manager 驱动,设置页扫码连路由、状态实时回传 —— 是真的能连上路由器,不是摆样子。</p>
       <span class="card-tag">wpa_supplicant</span>
     </div>
     <div class="card glass reveal">
       <div class="card-icon" style="--ic:#3CE0C8">◐</div>
       <h3>天气卡片</h3>
-      <p>动态温湿度展示,10s 定时刷新,图标由 PIL 程序化生成 — 月亮、云朵、发光描边。</p>
+      <p>动态温湿度展示,10s 定时刷新,图标用 PIL 程序化生成 — 月亮、云朵,还带发光描边。</p>
       <span class="card-tag">动态数据</span>
     </div>
     <div class="card glass reveal">
       <div class="card-icon" style="--ic:#9DB4FF">▭</div>
       <h3>超宽屏适配</h3>
-      <p>1424×280 约 5:1 超宽比例 — 四区块布局、波浪缺口提示条、独立 screen 页面互切。</p>
+      <p>1424×280 约 5:1 的比例,四区块布局、独立 screen 互切,按这个比例做的排版在这条屏上才成立。</p>
       <span class="card-tag">5:1 宽高比</span>
     </div>
     <div class="card glass reveal">
       <div class="card-icon" style="--ic:#7C6CFF">⇅</div>
+      <h3>网页远程控制</h3>
+      <p>板端 WebSocket agent + 公网中继,浏览器打开控制面板:音量、亮度、闹钟,加 CPU/内存实时曲线。</p>
+      <span class="card-tag">WebSocket</span>
+    </div>
+    <div class="card glass reveal">
+      <div class="card-icon" style="--ic:#3CE0C8">◐</div>
       <h3>双平台运行</h3>
       <p>同一套代码:x86 Linux 模拟器快速迭代 + T113-S3 真机部署,adb 抓帧验证渲染结果。</p>
       <span class="card-tag">T113-S3</span>
@@ -135,9 +231,10 @@
     <div class="stack-item" style="--d:.2s">CMake <small>构建</small></div>
     <div class="stack-item" style="--d:.3s">SDL2 <small>模拟器</small></div>
     <div class="stack-item" style="--d:.4s">wpa_supplicant <small>WiFi</small></div>
-    <div class="stack-item" style="--d:.5s">Python <small>PIL 图标生成</small></div>
-    <div class="stack-item" style="--d:.6s">Flask <small>后端</small></div>
-    <div class="stack-item" style="--d:.7s">adb <small>板端调试</small></div>
+    <div class="stack-item" style="--d:.5s">G2D <small>硬件加速</small></div>
+    <div class="stack-item" style="--d:.6s">WebSocket <small>远程控制</small></div>
+    <div class="stack-item" style="--d:.7s">Flask <small>本页后端</small></div>
+    <div class="stack-item" style="--d:.8s">adb <small>板端调试</small></div>
   </div>
 </section>
 
@@ -156,7 +253,7 @@
 <!-- ===== 后端 API ===== -->
 <section class="section" id="api">
   <h2 class="section-title reveal">后端 <span class="grad-text">API</span></h2>
-  <p class="section-desc reveal">本页面由 Python Flask 提供 — 下方数据来自真实的后端接口</p>
+  <p class="section-desc reveal">本页由 Python Flask 提供 — 下方数据来自真实的后端接口</p>
   <div class="api-grid reveal">
     <div class="terminal glass api-terminal">
       <div class="terminal-head">
@@ -166,11 +263,11 @@
       <pre class="terminal-body json-body" id="apiBody">loading…</pre>
     </div>
     <div class="api-info glass">
-      <h3>为什么需要 Python 后端?</h3>
+      <h3>为什么放个后端?</h3>
       <ul>
-        <li><b>实时数据</b> — 项目统计由后端在启动时扫描真实代码生成,而非写死的假数据</li>
-        <li><b>易扩展</b> — 未来可接入屏幕实时画面、编译状态、触摸事件日志</li>
-        <li><b>轻量部署</b> — 单文件 Flask 应用,零数据库依赖,一条命令启动</li>
+        <li><b>真实数据</b> — 行数、提交数由后端启动时扫真实代码生成,不是写死的</li>
+        <li><b>方便扩展</b> — 以后想接屏幕实时画面、编译状态,改几行就行</li>
+        <li><b>够轻</b> — 单文件 Flask,零数据库,一条命令启动</li>
       </ul>
     </div>
   </div>
@@ -180,7 +277,7 @@
 <footer class="footer">
   <div class="footer-inner">
     <div class="logo"><span class="logo-dot"></span><span class="logo-text">screen_lcd</span></div>
-    <p class="footer-line">C 语言 · LVGL 9.6 · T113-S3 · 由 <span class="grad-text">Python/Flask</span> 驱动的项目介绍页</p>
+    <p class="footer-line">C 语言 · LVGL 9.6 · T113-S3 · 本页面由 <span class="grad-text">Python/Flask</span> 驱动</p>
     <p class="footer-copy">© 2026 screen_lcd project</p>
   </div>
 </footer>

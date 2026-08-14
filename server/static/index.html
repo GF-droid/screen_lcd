@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>T113 远程控制面板</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <div class="logo-ring"><div class="logo-core">▣</div></div>
+    <div class="brand-text">
+      <h1>T113 <em>远程控制</em></h1>
+      <p class="sub">SMART SCREEN · REMOTE PANEL</p>
+    </div>
+  </div>
+  <div class="badges">
+    <span class="badge" id="badge-ws"><i></i>服务</span>
+    <span class="badge" id="badge-board"><i></i>设备</span>
+    <span class="badge" id="badge-latency"><i></i>RTT --ms</span>
+  </div>
+</header>
+
+<div class="banner" id="banner" hidden>⚠ 连接中断, 正在重连...</div>
+
+<main>
+  <!-- ======== 控制区 ======== -->
+  <section class="controls">
+    <div class="card ctrl-card c1">
+      <div class="card-head">
+        <div class="card-icon ic-vol">🔊</div>
+        <h2>音量</h2>
+        <span class="live-val" id="vol-val">80%</span>
+      </div>
+      <div class="slider-row">
+        <input type="range" id="vol-slider" min="0" max="100" step="1" value="80">
+      </div>
+      <div class="scale"><span>0</span><span>25</span><span>50</span><span>75</span><span>100</span></div>
+    </div>
+
+    <div class="card ctrl-card c2">
+      <div class="card-head">
+        <div class="card-icon ic-bright">🔆</div>
+        <h2>亮度</h2>
+        <span class="live-val" id="bright-val">60%</span>
+      </div>
+      <div class="slider-row">
+        <input type="range" id="bright-slider" min="0" max="100" step="1" value="60">
+      </div>
+      <div class="scale"><span>0</span><span>25</span><span>50</span><span>75</span><span>100</span></div>
+    </div>
+
+    <div class="card ctrl-card c3">
+      <div class="card-head">
+        <div class="card-icon ic-alarm">⏰</div>
+        <h2>闹钟</h2>
+        <span class="alarm-state" id="alarm-state">关</span>
+      </div>
+      <div class="clock">
+        <select id="alarm-h"></select>
+        <span class="colon">:</span>
+        <select id="alarm-m"></select>
+      </div>
+      <div class="alarm-row">
+        <label class="switch">
+          <input type="checkbox" id="alarm-on">
+          <span class="knob"></span>
+        </label>
+        <span class="alarm-hint">开启后到点响铃</span>
+      </div>
+      <div class="ringing" id="ringing" hidden>🔔 闹钟响铃中</div>
+    </div>
+  </section>
+
+  <!-- ======== 状态区 ======== -->
+  <section class="status">
+    <div class="card sys-card">
+      <div class="card-head">
+        <div class="card-icon ic-sys">📊</div>
+        <h2>系统参数</h2>
+      </div>
+      <div class="grid">
+        <div class="cell"><span class="k">🌐 IP 地址</span><span class="v" id="st-ip">--</span></div>
+        <div class="cell"><span class="k">📡 WiFi</span><span class="v" id="st-ssid">--</span></div>
+        <div class="cell"><span class="k">📶 信号强度</span><span class="v" id="st-rssi">--</span></div>
+        <div class="cell"><span class="k">🧠 内存</span><span class="v" id="st-mem">--</span></div>
+        <div class="cell"><span class="k">⚙️ CPU 使用率</span><span class="v" id="st-cpu">--</span></div>
+        <div class="cell"><span class="k">⏱ 运行时长</span><span class="v" id="st-uptime">--</span></div>
+        <div class="cell"><span class="k">🔊 当前音量</span><span class="v" id="st-vol">--</span></div>
+        <div class="cell"><span class="k">🔆 当前亮度</span><span class="v" id="st-bright">--</span></div>
+      </div>
+    </div>
+
+    <div class="card sys-card chart-card">
+      <div class="card-head">
+        <div class="card-icon ic-chart">📈</div>
+        <h2>运行状态</h2>
+        <div class="legend">
+          <i class="lg-cpu"></i>CPU <i class="lg-mem"></i>内存
+        </div>
+      </div>
+      <canvas id="chart"></canvas>
+    </div>
+  </section>
+</main>
+
+<footer class="foot">demo9 · T113 智能屏远程控制 · WebSocket 中继</footer>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

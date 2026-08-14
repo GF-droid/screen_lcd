@@ -115,9 +115,9 @@
 
   /* ---------- 5. 打字机 ---------- */
   const TEXTS = [
-    "一块 1424×280 的超宽智能屏幕,用 C 语言与 LVGL 9.6 精心雕琢。",
-    "深色玻璃拟态 · 青色发光描边 · 农历时钟 · 天气卡片 · WiFi 连接。",
-    "x86 模拟器快速迭代,T113-S3 真机部署 — 本页由 Python Flask 驱动。",
+    "一块 1424×280 的超宽条屏,摆在显示器下面,时间、天气、状态排成一行。",
+    "从内核驱动到 UI 都是自己写的 — LVGL 9.6 画界面,T113-S3 跑系统。",
+    "WiFi 连上网,浏览器里拖个滑块,板子的音量亮度就跟着变。",
   ];
   const typer = document.getElementById("typer");
   let ti = 0, ci = 0, deleting = false;
@@ -161,21 +161,23 @@
   const TREE = [
     { t: "screen_lcd", c: "#3ce0c8", b: true },
     { t: "├─ apps/", c: "#9db4ff" },
-    { t: "│  ├─ demo7/", c: "#9db4ff" },
-    { t: "│  │  ├─ main.c           # 入口:LVGL 初始化 + WiFi 事件线程", c: "#b9c4e8" },
-    { t: "│  │  └─ page/            # 主页 + 设置页(独立 screen 互切)", c: "#b9c4e8" },
-    { t: "│  └─ demo6/              # 设置页组件库(移植基准)", c: "#b9c4e8" },
+    { t: "│  ├─ demo9/           # 远程控制 agent(音量/亮度/闹钟)", c: "#b9c4e8" },
+    { t: "│  │  ├─ main.c         # ws + 闹钟双线程入口", c: "#b9c4e8" },
+    { t: "│  │  ├─ net/           # 自研 WebSocket 客户端", c: "#b9c4e8" },
+    { t: "│  │  └─ ctrl/          # 音量/亮度/闹钟控制", c: "#b9c4e8" },
+    { t: "│  └─ demo8/           # 完整 UI: 主页 + 设置页", c: "#b9c4e8" },
     { t: "├─ component/", c: "#9db4ff" },
-    { t: "│  ├─ font/               # 中文字体裁剪 + 加载", c: "#b9c4e8" },
-    { t: "│  ├─ wifi/               # wpa_manager 驱动移植", c: "#b9c4e8" },
-    { t: "│  └─ osal/               # 操作系统抽象层", c: "#b9c4e8" },
-    { t: "├─ lvgl-master/           # LVGL v9.6 图形库", c: "#b9c4e8" },
+    { t: "│  ├─ font/             # 中文字体裁剪加载", c: "#b9c4e8" },
+    { t: "│  ├─ wifi/             # wpa_manager 驱动移植", c: "#b9c4e8" },
+    { t: "│  └─ osal/             # 操作系统抽象层", c: "#b9c4e8" },
+    { t: "├─ lvgl-master/         # LVGL v9.6 图形库", c: "#b9c4e8" },
     { t: "├─ platform/", c: "#9db4ff" },
-    { t: "│  ├─ x86linux/           # SDL 模拟器移植层", c: "#b9c4e8" },
-    { t: "│  └─ t113/               # T113-S3 真机移植层(fb + 触摸)", c: "#b9c4e8" },
+    { t: "│  ├─ x86linux/         # SDL 模拟器移植层", c: "#b9c4e8" },
+    { t: "│  └─ t113/             # fb + G2D 加速 + 触摸", c: "#b9c4e8" },
+    { t: "├─ server/              # 远程控制中继服务器", c: "#9db4ff" },
     { t: "└─ html/", c: "#9db4ff" },
-    { t: "   ├─ server.py           # ← 你正在看的这个后端", c: "#a8f0e2" },
-    { t: "   └─ index.html          # ← 你正在看的这个页面", c: "#a8f0e2" },
+    { t: "   ├─ server.py         # ← 你正在看的这个后端", c: "#a8f0e2" },
+    { t: "   └─ index.html        # ← 你正在看的这个页面", c: "#a8f0e2" },
   ];
   const termBody = document.getElementById("terminalBody");
   if (termBody) {
